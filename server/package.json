@@ -14,12 +14,7 @@
     "lint": "tsc --noEmit",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": [
-    "job",
-    "hunting",
-    "ai",
-    "recruitment"
-  ],
+  "keywords": ["job", "hunting", "ai", "recruitment"],
   "author": "",
   "license": "ISC",
   "dependencies": {
@@ -41,6 +36,7 @@
     "node-cron": "^3.0.3",
     "nodemailer": "^6.9.7",
     "pdf-lib": "^1.17.1",
+    "pdfkit": "^0.13.0",
     "playwright": "^1.40.1",
     "socket.io": "^4.7.2",
     "uuid": "^9.0.1",
@@ -53,6 +49,7 @@
     "@types/jsonwebtoken": "^9.0.0",
     "@types/node": "^20.10.6",
     "@types/nodemailer": "^6.4.14",
+    "@types/pdfkit": "^0.13.1",
     "@types/uuid": "^9.0.7",
     "prisma": "^5.8.0",
     "ts-node": "^10.9.2",
