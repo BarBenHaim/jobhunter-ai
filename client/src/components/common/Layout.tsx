@@ -119,7 +119,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
         </header>
 
         {/* Content */}
-        <main className="flex-1 overflow-auto">{children}</main>
+        <main className="flex-1 overflow-auto p-6">{children}</main>
       </div>
 
       {/* Toast notifications */}
