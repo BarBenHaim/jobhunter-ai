@@ -1,5 +1,6 @@
 generator client {
   provider = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
@@ -119,7 +120,7 @@ model Job {
   company            String
   companyUrl         String?
   location           String
-  locationType        LocationType
+  locationType       LocationType
   description        String
   requirements       String?
   salary             Json?    @default("{}")
@@ -176,6 +177,7 @@ model Application {
   jobId              String
   job                Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
   personaId          String
+  persona            Persona @relation(fields: [personaId], references: [id], onDelete: Cascade)
 
   status             AppStatus @default(PENDING)
   cvFilePath         String?
@@ -239,6 +241,7 @@ model AnalyticsEvent {
 model ScoringRule {
   id                 String   @id @default(cuid())
   personaId          String
+  persona            Persona @relation(fields: [personaId], references: [id], onDelete: Cascade)
 
   ruleType           String
   field              String
