@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build
+dist/
+build/
+*.js.map
+
+# Environment
+.env
+.env.local
+.env.production
+
+# Database
+*.db
+pgdata/
+
+# Generated files
+generated-cvs/
+cv-output/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Testing
+coverage/
+
+# Playwright
+playwright-report/
+test-results/
