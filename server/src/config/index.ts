@@ -6,7 +6,7 @@ export const config = {
   app: {
     name: 'JobHunter AI',
     version: '1.0.0',
-    port: parseInt(process.env.APP_PORT || '3001', 10),
+    port: parseInt(process.env.PORT || process.env.APP_PORT || '3001', 10),
     nodeEnv: process.env.NODE_ENV || 'development',
   },
   database: {
