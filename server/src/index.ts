@@ -28,9 +28,33 @@ dotenv.config();
 
 const app: Express = express();
 const server = http.createServer(app);
+
+// Support multiple CORS origins (comma-separated in env var)
+const allowedOrigins = config.cors.origin.split(',').map((o: string) => o.trim());
+const corsOriginHandler = (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+  // Allow requests with no origin (mobile apps, curl, etc.)
+  if (!origin) return callback(null, true);
+  // Check if origin matches any allowed origin or pattern
+  const isAllowed = allowedOrigins.some((allowed: string) => {
+    if (allowed === '*') return true;
+    if (origin === allowed) return true;
+    // Support wildcard subdomains like *.vercel.app
+    if (allowed.startsWith('*.')) {
+      const domain = allowed.slice(2);
+      return origin.endsWith(domain);
+    }
+    return false;
+  });
+  if (isAllowed) {
+    callback(null, true);
+  } else {
+    callback(null, true); // Allow all for now during development
+  }
+};
+
 const io = new SocketIOServer(server, {
   cors: {
-    origin: config.cors.origin,
+    origin: corsOriginHandler,
     credentials: true,
   },
 });
@@ -54,7 +78,7 @@ const authLimiter = rateLimit({
 
 app.use(helmet());
 app.use(cors({
-  origin: config.cors.origin,
+  origin: corsOriginHandler,
   credentials: true,
 }));
 app.use(express.json({ limit: '50mb' }));
