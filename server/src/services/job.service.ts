@@ -37,6 +37,10 @@ export class JobService {
         where.source = filters.source;
       }
 
+      if (filters.locationType) {
+        where.locationType = filters.locationType;
+      }
+
       if (filters.minScore !== undefined || filters.maxScore !== undefined) {
         where.scores = {
           some: {
