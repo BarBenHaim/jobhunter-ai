@@ -1,70 +1,72 @@
-// Enums
+// Enums - aligned with server Prisma schema
 export enum JobSource {
-  LINKEDIN = 'linkedin',
-  INDEED = 'indeed',
-  GLASSDOOR = 'glassdoor',
-  BUILTIN = 'builtin',
-  TECHCRUNCH = 'techcrunch',
-  ANGELLIST = 'angellist',
-  MANUAL = 'manual',
+  LINKEDIN = 'LINKEDIN',
+  INDEED = 'INDEED',
+  ALLJOBS = 'ALLJOBS',
+  DRUSHIM = 'DRUSHIM',
+  FACEBOOK_GROUP = 'FACEBOOK_GROUP',
+  WELLFOUND = 'WELLFOUND',
+  COMPANY_CAREER_PAGE = 'COMPANY_CAREER_PAGE',
+  GOOGLE_JOBS = 'GOOGLE_JOBS',
+  GLASSDOOR = 'GLASSDOOR',
+  OTHER = 'OTHER',
 }
 
 export enum LocationType {
-  REMOTE = 'remote',
-  ONSITE = 'onsite',
-  HYBRID = 'hybrid',
+  REMOTE = 'REMOTE',
+  ONSITE = 'ONSITE',
+  HYBRID = 'HYBRID',
 }
 
 export enum Recommendation {
-  STRONG_PASS = 'strong_pass',
-  PASS = 'pass',
-  MAYBE = 'maybe',
-  REVIEW = 'review',
-  WEAK_REJECT = 'weak_reject',
-  STRONG_REJECT = 'strong_reject',
+  AUTO_APPLY = 'AUTO_APPLY',
+  MANUAL_REVIEW = 'MANUAL_REVIEW',
+  SKIP = 'SKIP',
+  ARCHIVE = 'ARCHIVE',
 }
 
 export enum AppStatus {
-  DRAFT = 'draft',
-  SUBMITTED = 'submitted',
-  ACCEPTED = 'accepted',
-  REJECTED = 'rejected',
-  IN_PROGRESS = 'in_progress',
-  INTERVIEW = 'interview',
-  OFFER = 'offer',
-  WITHDRAWN = 'withdrawn',
+  PENDING = 'PENDING',
+  CV_GENERATED = 'CV_GENERATED',
+  AWAITING_REVIEW = 'AWAITING_REVIEW',
+  APPROVED = 'APPROVED',
+  APPLIED = 'APPLIED',
+  VIEWED = 'VIEWED',
+  RESPONDED = 'RESPONDED',
+  INTERVIEW = 'INTERVIEW',
+  OFFER = 'OFFER',
+  REJECTED = 'REJECTED',
+  WITHDRAWN = 'WITHDRAWN',
 }
 
 export enum FollowUpType {
-  REMINDER = 'reminder',
-  EMAIL = 'email',
-  CALL = 'call',
-  LINKEDIN = 'linkedin',
+  INITIAL = 'INITIAL',
+  SECOND = 'SECOND',
+  FINAL = 'FINAL',
+  THANK_YOU = 'THANK_YOU',
+  NEGOTIATION = 'NEGOTIATION',
 }
 
 export enum ResponseType {
-  POSITIVE = 'positive',
-  NEGATIVE = 'negative',
-  NEUTRAL = 'neutral',
-  NO_RESPONSE = 'no_response',
+  POSITIVE = 'POSITIVE',
+  NEGATIVE = 'NEGATIVE',
+  INFO_REQUEST = 'INFO_REQUEST',
+  INTERVIEW_INVITE = 'INTERVIEW_INVITE',
 }
 
 // User & Profile
 export interface UserProfile {
   id: string
-  name: string
+  fullName: string
   email: string
   phone?: string
   location?: string
-  timezone?: string
-  currentRole?: string
-  targetRoles: string[]
-  yearsOfExperience: number
-  skills: string[]
-  certifications?: string[]
   linkedinUrl?: string
   githubUrl?: string
   portfolioUrl?: string
+  rawKnowledge?: Record<string, any>
+  structuredProfile?: Record<string, any>
+  preferences?: Record<string, any>
   createdAt: Date
   updatedAt: Date
 }
@@ -74,37 +76,27 @@ export interface Persona {
   id: string
   userId: string
   name: string
-  description?: string
-  targetRoles: string[]
-  targetCompanies?: string[]
-  targetIndustries?: string[]
-  minSalary?: number
-  maxSalary?: number
-  preferredLocations: LocationType[]
-  requiredSkills: string[]
-  niceToHaveSkills: string[]
-  importance?: Record<string, number>
+  slug: string
+  title: string
+  summary: string
+  targetKeywords: string[]
+  excludeKeywords: string[]
+  skillPriority?: Record<string, any>
+  experienceRules?: Record<string, any>
+  cvTemplateId?: string
   isActive: boolean
-  cvId?: string
-  customScoring?: boolean
-  scoringWeights?: ScoringWeights
+  searchSchedule?: Record<string, any>
   createdAt: Date
   updatedAt: Date
-}
-
-export interface ScoringWeights {
-  roleMatch: number
-  skillMatch: number
-  companyMatch: number
-  compensationMatch: number
-  locationMatch: number
 }
 
 // Jobs
 export interface Job {
   id: string
+  externalId?: string
   title: string
   company: string
+  companyUrl?: string
   description: string
   source: JobSource
   sourceUrl: string
@@ -113,16 +105,25 @@ export interface Job {
   salary?: {
     min?: number
     max?: number
-    currency: string
+    currency?: string
   }
-  requirements: string[]
-  tags: string[]
-  postedAt: Date
+  requirements?: string
+  experienceLevel?: string
+  tags?: string[]
+  postedAt?: Date
+  scrapedAt?: Date
   expiresAt?: Date
-  views: number
   isActive: boolean
+  rawData?: Record<string, any>
+  dedupHash?: string
   createdAt: Date
   updatedAt: Date
+}
+
+export interface JobWithScore extends Job {
+  scores?: JobScore[]
+  score?: number
+  recommendation?: Recommendation
 }
 
 export interface JobScore {
@@ -130,16 +131,17 @@ export interface JobScore {
   jobId: string
   personaId: string
   overallScore: number
-  recommendation: Recommendation
-  roleMatch: number
   skillMatch: number
-  companyMatch: number
-  compensationMatch: number
-  locationMatch: number
-  reasoning: string
-  strengths: string[]
-  gaps: string[]
-  improvementSuggestions: string[]
+  experienceMatch: number
+  cultureFit: number
+  salaryMatch: number
+  acceptanceProb: number
+  recommendation: Recommendation
+  reasoning?: string
+  matchedSkills: string[]
+  missingSkills: string[]
+  redFlags: string[]
+  bestPersonaId?: string
   scoredAt: Date
 }
 
@@ -148,23 +150,19 @@ export interface Application {
   id: string
   jobId: string
   personaId: string
-  userId: string
   status: AppStatus
-  cvId?: string
-  coverLetterId?: string
-  submittedAt?: Date
-  responses?: ApplicationResponse[]
+  cvFilePath?: string
+  coverLetterPath?: string
+  cvContent?: Record<string, any>
+  appliedAt?: Date
+  appliedVia?: string
+  responseAt?: Date
+  responseType?: ResponseType
+  interviewDates: Date[]
   notes?: string
-  rejectionReason?: string
+  score?: number
   createdAt: Date
   updatedAt: Date
-}
-
-export interface ApplicationResponse {
-  type: string
-  content: string
-  respondedAt: Date
-  responseType: ResponseType
 }
 
 // CV Management
@@ -181,24 +179,16 @@ export interface CV {
   updatedAt: Date
 }
 
-export interface CVTemplate {
-  id: string
-  name: string
-  description: string
-  content: string
-  category: string
-  isPublic: boolean
-}
-
 // Follow-ups
 export interface FollowUp {
   id: string
   applicationId: string
   type: FollowUpType
-  scheduledFor: Date
-  message?: string
-  status: 'pending' | 'completed' | 'cancelled'
+  scheduledAt: Date
   completedAt?: Date
+  message?: string
+  channel?: string
+  status: 'pending' | 'completed' | 'cancelled'
   createdAt: Date
   updatedAt: Date
 }
@@ -208,9 +198,9 @@ export interface AnalyticsEvent {
   id: string
   userId: string
   eventType: string
-  jobId?: string
-  applicationId?: string
-  metadata: Record<string, any>
+  entityType?: string
+  entityId?: string
+  metadata?: Record<string, any>
   createdAt: Date
 }
 
@@ -225,18 +215,6 @@ export interface ScoreDistribution {
   count: number
 }
 
-export interface ResponseTimeData {
-  company: string
-  avgDays: number
-  count: number
-}
-
-export interface KeywordAnalysis {
-  keyword: string
-  frequency: number
-  success_rate: number
-}
-
 export interface TrendData {
   date: string
   applications: number
@@ -244,43 +222,30 @@ export interface TrendData {
   offers: number
 }
 
-export interface PersonaROIData {
-  personaId: string
-  personaName: string
-  applicationsSubmitted: number
-  interviews: number
-  offers: number
-  roi: number
-}
-
-export interface SourcePerformance {
-  source: JobSource
-  applicationsSubmitted: number
-  interviews: number
-  offers: number
-  responseRate: number
-}
-
 // Scoring Rules
 export interface ScoringRule {
   id: string
   personaId: string
-  type: 'keyword' | 'salary' | 'location' | 'custom'
-  condition: string
-  value: number | string
-  operator: 'equals' | 'contains' | 'gte' | 'lte' | 'range'
-  impact: number
-  isActive: boolean
+  ruleType: string
+  field: string
+  value: string
+  weight: number
+  learnedFrom?: string
   createdAt: Date
+  updatedAt: Date
 }
 
 // API Response Types
 export interface PaginatedResponse<T> {
+  success: boolean
   data: T[]
-  total: number
-  page: number
-  limit: number
-  pages: number
+  meta: {
+    total: number
+    page: number
+    limit: number
+    pages: number
+    hasMore: boolean
+  }
 }
 
 export interface ApiError {
@@ -293,12 +258,11 @@ export interface ApiError {
 export interface JobFilters {
   page?: number
   limit?: number
-  source?: JobSource
-  locationType?: LocationType
-  minSalary?: number
-  maxSalary?: number
-  keywords?: string
-  sortBy?: 'newest' | 'oldest' | 'salary_high' | 'salary_low'
+  source?: JobSource | string
+  locationType?: LocationType | string
+  search?: string
+  sort?: string
+  order?: 'asc' | 'desc'
 }
 
 export interface ApplicationFilters {
@@ -324,8 +288,6 @@ export interface Settings {
   pushNotifications: boolean
   scrapeFrequency: 'daily' | 'weekly' | 'monthly'
   autoScoreNewJobs: boolean
-  linkedinApiKey?: string
-  indeedApiKey?: string
   customScrapers?: CustomScraper[]
 }
 
@@ -347,4 +309,36 @@ export interface SystemHealth {
   externalApis: Record<string, boolean>
   uptime: number
   lastCheck: Date
+}
+
+// Scrape types
+export interface ScrapeSource {
+  id: string
+  name: string
+  url: string
+  description: string
+  available: boolean
+  requiresApiKey?: string
+}
+
+export interface ScrapeStatus {
+  currentStats: {
+    lastScrapeTime: Date | null
+    lastJobCount: number
+    totalScrapesRun: number
+    sourceStats: Record<string, { count: number; timestamp: Date }>
+  }
+  databaseStats: Record<string, any>
+  availableSources: string[]
+  lastScraped: Date | null
+  totalScrapesRun: number
+  totalJobsInDB: number
+}
+
+export interface ScrapeTriggerResult {
+  totalJobsCreated: number
+  jobsCreated: Array<{ id: string; title: string; company: string; source: string }>
+  sourceBreakdown: Array<{ source: string; scrapedCount: number; timestamp: Date }>
+  keywords: string[]
+  location: string
 }
