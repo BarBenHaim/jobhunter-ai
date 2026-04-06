@@ -1,4 +1,4 @@
-import { Router, Response } from 'express';
+import { Router, Request, Response } from 'express';
 import { body, param, query, validationResult } from 'express-validator';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
@@ -8,7 +8,9 @@ import logger from '../utils/logger';
 
 const router = Router();
 
-router.use(authMiddleware);
+// ============================================================
+// PUBLIC endpoints (no auth required for reading jobs)
+// ============================================================
 
 // GET /api/jobs - List jobs with query params
 router.get(
@@ -20,12 +22,13 @@ router.get(
     query('minScore').optional().isFloat(),
     query('maxScore').optional().isFloat(),
     query('search').optional().isString(),
+    query('locationType').optional().isString(),
     query('page').optional().isInt({ min: 1 }),
     query('limit').optional().isInt({ min: 1, max: 100 }),
     query('sort').optional().isString(),
     query('order').optional().isIn(['asc', 'desc']),
   ],
-  asyncHandler(async (req: AuthRequest, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       res.status(400).json({
@@ -46,16 +49,22 @@ router.get(
       minScore: req.query.minScore ? parseFloat(req.query.minScore as string) : undefined,
       maxScore: req.query.maxScore ? parseFloat(req.query.maxScore as string) : undefined,
       title: req.query.search as string | undefined,
-    };
+      locationType: req.query.locationType as string | undefined,
+    } as any;
+
+    const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 20;
+    const page = req.query.page ? parseInt(req.query.page as string, 10) : 1;
 
     const pagination = {
-      limit: req.query.limit ? parseInt(req.query.limit as string, 10) : 20,
-      offset: req.query.page ? (parseInt(req.query.page as string, 10) - 1) * 20 : 0,
+      limit,
+      offset: (page - 1) * limit,
       sortBy: req.query.sort as string | undefined,
       sortOrder: (req.query.order as 'asc' | 'desc') || 'desc',
     };
 
-    const result = await jobService.listJobs(req.userId!, filters, pagination);
+    // Use a default userId for public access
+    const userId = (req as any).userId || 'public';
+    const result = await jobService.listJobs(userId, filters, pagination);
 
     res.status(200).json({
       success: true,
@@ -71,11 +80,23 @@ router.get(
   })
 );
 
-// GET /api/jobs/:id - Get job detail with scores
+// GET /api/jobs/stats - Scraping stats (public)
+router.get(
+  '/stats',
+  asyncHandler(async (req: Request, res: Response) => {
+    const stats = await jobService.getScrapingStats();
+    res.status(200).json({
+      success: true,
+      data: stats,
+    });
+  })
+);
+
+// GET /api/jobs/:id - Get job detail with scores (public)
 router.get(
   '/:id',
   [param('id').isString().notEmpty()],
-  asyncHandler(async (req: AuthRequest, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       res.status(400).json({
@@ -97,9 +118,14 @@ router.get(
   })
 );
 
+// ============================================================
+// PROTECTED endpoints (auth required)
+// ============================================================
+
 // POST /api/jobs/scrape-now - Trigger immediate scrape
 router.post(
   '/scrape-now',
+  authMiddleware,
   [
     body('sources').isArray().notEmpty().withMessage('Sources array is required'),
     body('sources.*').isString(),
@@ -150,6 +176,7 @@ router.post(
 // POST /api/jobs/add-source - Add company career page
 router.post(
   '/add-source',
+  authMiddleware,
   [
     body('company').isString().notEmpty().withMessage('Company is required'),
     body('url').isURL().withMessage('Valid URL is required'),
@@ -178,21 +205,10 @@ router.post(
   })
 );
 
-// GET /api/jobs/stats - Scraping stats
-router.get(
-  '/stats',
-  asyncHandler(async (req: AuthRequest, res: Response) => {
-    const stats = await jobService.getScrapingStats();
-    res.status(200).json({
-      success: true,
-      data: stats,
-    });
-  })
-);
-
 // DELETE /api/jobs/expired - Clean expired listings
 router.delete(
   '/expired',
+  authMiddleware,
   asyncHandler(async (req: AuthRequest, res: Response) => {
     const result = await jobService.cleanExpired();
     res.status(200).json({
