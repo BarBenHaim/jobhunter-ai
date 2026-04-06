@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -5,72 +7,176 @@
 @layer base {
   :root {
     color-scheme: light;
+    --glass-bg: rgba(255, 255, 255, 0.7);
+    --glass-border: rgba(255, 255, 255, 0.3);
+    --gradient-start: #6366f1;
+    --gradient-end: #8b5cf6;
   }
 
   html.dark {
     color-scheme: dark;
+    --glass-bg: rgba(17, 24, 39, 0.75);
+    --glass-border: rgba(255, 255, 255, 0.08);
+    --gradient-start: #818cf8;
+    --gradient-end: #a78bfa;
   }
 
   body {
-    @apply bg-white text-gray-900 dark:bg-gray-950 dark:text-gray-100;
+    @apply bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100 antialiased;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
   }
 
   * {
-    @apply border-gray-200 dark:border-gray-800;
+    @apply border-gray-200/60 dark:border-gray-800/60;
+  }
+
+  ::selection {
+    @apply bg-primary-200 dark:bg-primary-800/50;
   }
 }
 
 @layer components {
   .input-base {
-    @apply px-3 py-2 rounded-lg border bg-white text-gray-900 placeholder-gray-500 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 dark:bg-gray-900 dark:text-gray-100 dark:placeholder-gray-400;
+    @apply px-3.5 py-2.5 rounded-xl border bg-white/80 text-gray-900 placeholder-gray-400
+    backdrop-blur-sm transition-all duration-200
+    focus:outline-none focus:ring-2 focus:ring-primary-500/30 focus:border-primary-400
+    dark:bg-gray-900/80 dark:text-gray-100 dark:placeholder-gray-500
+    dark:focus:ring-primary-400/30 dark:focus:border-primary-500;
   }
 
   .button-base {
-    @apply inline-flex items-center justify-center rounded-lg font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 dark:focus:ring-offset-gray-950;
+    @apply inline-flex items-center justify-center rounded-xl font-semibold
+    transition-all duration-200 ease-out
+    focus:outline-none focus:ring-2 focus:ring-primary-500/40 focus:ring-offset-2
+    dark:focus:ring-offset-gray-950 active:scale-[0.98];
   }
 
   .button-primary {
-    @apply button-base bg-primary-600 px-4 py-2 text-white hover:bg-primary-700 active:bg-primary-800;
+    @apply button-base bg-gradient-to-r from-primary-600 to-primary-500 px-5 py-2.5 text-white
+    shadow-md shadow-primary-500/20
+    hover:shadow-lg hover:shadow-primary-500/30 hover:from-primary-500 hover:to-primary-400
+    active:from-primary-700 active:to-primary-600;
   }
 
   .button-secondary {
-    @apply button-base border bg-white px-4 py-2 text-gray-900 hover:bg-gray-50 active:bg-gray-100 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800 dark:active:bg-gray-700;
+    @apply button-base border border-gray-200 bg-white px-5 py-2.5 text-gray-700
+    shadow-sm hover:bg-gray-50 hover:border-gray-300 hover:shadow
+    active:bg-gray-100
+    dark:bg-gray-800/50 dark:text-gray-200 dark:border-gray-700
+    dark:hover:bg-gray-800 dark:hover:border-gray-600
+    dark:active:bg-gray-700;
+  }
+
+  /* Glass card style */
+  .glass {
+    background: var(--glass-bg);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--glass-border);
   }
 
   .card-base {
-    @apply rounded-lg border bg-white p-4 shadow-sm dark:bg-gray-900 dark:shadow-md;
+    @apply rounded-2xl border border-gray-200/50 bg-white p-5
+    shadow-card transition-all duration-300
+    dark:bg-gray-900/80 dark:border-gray-800/50 dark:shadow-glass-dark;
   }
 
-  .scroll-smooth {
-    scroll-behavior: smooth;
+  .card-hover {
+    @apply hover:shadow-card-hover hover:-translate-y-0.5 hover:border-gray-300/50
+    dark:hover:border-gray-700/50 dark:hover:shadow-glass-dark;
+  }
+
+  .gradient-text {
+    @apply bg-gradient-to-r from-primary-600 to-purple-500 bg-clip-text text-transparent
+    dark:from-primary-400 dark:to-purple-400;
+  }
+
+  .gradient-border {
+    @apply relative overflow-hidden rounded-2xl;
+  }
+
+  .gradient-border::before {
+    content: '';
+    @apply absolute inset-0 rounded-2xl;
+    padding: 1px;
+    background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
   }
 }
 
-/* Animations */
+/* Premium Animations */
 @keyframes fade-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
-@keyframes slide-in {
-  from {
-    transform: translateY(10px);
-    opacity: 0;
-  }
-  to {
-    transform: translateY(0);
-    opacity: 1;
-  }
+@keyframes slide-up {
+  from { transform: translateY(16px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
 }
 
-.animate-fade-in {
-  animation: fade-in 0.2s ease-in-out;
+@keyframes slide-in-right {
+  from { transform: translateX(20px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
 }
 
-.animate-slide-in {
-  animation: slide-in 0.3s ease-out;
+@keyframes scale-in {
+  from { transform: scale(0.95); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes gradient-shift {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+.animate-fade-in { animation: fade-in 0.3s ease-out; }
+.animate-slide-up { animation: slide-up 0.4s ease-out; }
+.animate-slide-in { animation: slide-up 0.3s ease-out; }
+.animate-scale-in { animation: scale-in 0.2s ease-out; }
+
+/* Stagger animation delays */
+.stagger-1 { animation-delay: 50ms; animation-fill-mode: both; }
+.stagger-2 { animation-delay: 100ms; animation-fill-mode: both; }
+.stagger-3 { animation-delay: 150ms; animation-fill-mode: both; }
+.stagger-4 { animation-delay: 200ms; animation-fill-mode: both; }
+.stagger-5 { animation-delay: 250ms; animation-fill-mode: both; }
+.stagger-6 { animation-delay: 300ms; animation-fill-mode: both; }
+
+/* Animated gradient background */
+.animated-gradient {
+  background-size: 200% 200%;
+  animation: gradient-shift 8s ease infinite;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-gray-300 dark:bg-gray-700 rounded-full;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-gray-400 dark:bg-gray-600;
+}
+
+/* Smooth transitions for theme switching */
+html.transitioning * {
+  transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease !important;
 }
