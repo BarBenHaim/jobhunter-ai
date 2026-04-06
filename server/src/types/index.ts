@@ -181,6 +181,7 @@ export interface ScraperResult {
 export interface SearchFilters {
   company?: string;
   location?: string;
+  locationType?: string;
   title?: string;
   source?: string;
   minScore?: number;
