@@ -5,17 +5,16 @@ import {
   Zap,
   CheckCircle,
   Calendar,
-  RotateCcw,
   Activity,
-  AlertCircle,
   CheckCheck,
   MessageSquare,
   Clock,
+  ArrowUpRight,
+  Sparkles,
 } from 'lucide-react'
 import { Card } from '@/components/common/Card'
-import { Badge } from '@/components/common/Badge'
 import { EmptyState } from '@/components/common/EmptyState'
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 
 interface StatsData {
   totalJobsFound: number
@@ -49,10 +48,53 @@ interface SourceHealth {
   lastCheckedAt: Date
 }
 
+const statCards = [
+  {
+    key: 'totalJobsFound',
+    label: 'Total Jobs Found',
+    sub: '+24 this week',
+    icon: TrendingUp,
+    gradient: 'from-blue-500 to-cyan-400',
+    shadowColor: 'shadow-blue-500/20',
+    bgLight: 'bg-blue-50',
+    bgDark: 'dark:bg-blue-900/20',
+  },
+  {
+    key: 'applicationsThisWeek',
+    label: 'Applications This Week',
+    sub: 'Goal: 20',
+    icon: Zap,
+    gradient: 'from-purple-500 to-pink-400',
+    shadowColor: 'shadow-purple-500/20',
+    bgLight: 'bg-purple-50',
+    bgDark: 'dark:bg-purple-900/20',
+  },
+  {
+    key: 'responseRate',
+    label: 'Response Rate',
+    sub: '+4% this week',
+    icon: CheckCheck,
+    gradient: 'from-emerald-500 to-teal-400',
+    shadowColor: 'shadow-emerald-500/20',
+    bgLight: 'bg-emerald-50',
+    bgDark: 'dark:bg-emerald-900/20',
+    suffix: '%',
+  },
+  {
+    key: 'interviewsScheduled',
+    label: 'Interviews Scheduled',
+    sub: '2 this week',
+    icon: Calendar,
+    gradient: 'from-orange-500 to-amber-400',
+    shadowColor: 'shadow-orange-500/20',
+    bgLight: 'bg-orange-50',
+    bgDark: 'dark:bg-orange-900/20',
+  },
+]
+
 const Dashboard = () => {
   const [timeRange, setTimeRange] = useState('week')
 
-  // Fetch stats
   const { data: statsData } = useQuery<StatsData>({
     queryKey: ['dashboard-stats'],
     queryFn: async () => ({
@@ -63,7 +105,6 @@ const Dashboard = () => {
     }),
   })
 
-  // Fetch activity timeline
   const { data: activityData } = useQuery<ActivityEvent[]>({
     queryKey: ['dashboard-activity'],
     queryFn: async () => [
@@ -103,7 +144,6 @@ const Dashboard = () => {
     ],
   })
 
-  // Fetch follow-ups
   const { data: followUpData } = useQuery<FollowUp[]>({
     queryKey: ['dashboard-followups'],
     queryFn: async () => [
@@ -124,7 +164,6 @@ const Dashboard = () => {
     ],
   })
 
-  // Fetch source health
   const { data: sourceHealthData } = useQuery<SourceHealth[]>({
     queryKey: ['source-health'],
     queryFn: async () => [
@@ -136,7 +175,6 @@ const Dashboard = () => {
     ],
   })
 
-  // Fetch trend data for chart
   const { data: trendData } = useQuery({
     queryKey: ['dashboard-trends', timeRange],
     queryFn: async () => [
@@ -153,35 +191,29 @@ const Dashboard = () => {
   const getActivityIcon = (type: ActivityEvent['type']) => {
     switch (type) {
       case 'job_found':
-        return <TrendingUp size={18} className="text-blue-600 dark:text-blue-400" />
+        return <div className="rounded-xl bg-blue-100 p-2 dark:bg-blue-900/30"><TrendingUp size={16} className="text-blue-600 dark:text-blue-400" /></div>
       case 'cv_generated':
-        return <CheckCircle size={18} className="text-green-600 dark:text-green-400" />
+        return <div className="rounded-xl bg-emerald-100 p-2 dark:bg-emerald-900/30"><CheckCircle size={16} className="text-emerald-600 dark:text-emerald-400" /></div>
       case 'application_sent':
-        return <Zap size={18} className="text-yellow-600 dark:text-yellow-400" />
+        return <div className="rounded-xl bg-amber-100 p-2 dark:bg-amber-900/30"><Zap size={16} className="text-amber-600 dark:text-amber-400" /></div>
       case 'response_received':
-        return <MessageSquare size={18} className="text-purple-600 dark:text-purple-400" />
+        return <div className="rounded-xl bg-purple-100 p-2 dark:bg-purple-900/30"><MessageSquare size={16} className="text-purple-600 dark:text-purple-400" /></div>
     }
   }
 
   const getStatusColor = (status: SourceHealth['status']) => {
     switch (status) {
-      case 'healthy':
-        return 'text-green-600 dark:text-green-400'
-      case 'degraded':
-        return 'text-yellow-600 dark:text-yellow-400'
-      case 'down':
-        return 'text-red-600 dark:text-red-400'
+      case 'healthy': return 'text-emerald-600 dark:text-emerald-400'
+      case 'degraded': return 'text-amber-600 dark:text-amber-400'
+      case 'down': return 'text-red-500 dark:text-red-400'
     }
   }
 
   const getStatusDot = (status: SourceHealth['status']) => {
     switch (status) {
-      case 'healthy':
-        return 'bg-green-500'
-      case 'degraded':
-        return 'bg-yellow-500'
-      case 'down':
-        return 'bg-red-500'
+      case 'healthy': return 'bg-emerald-500'
+      case 'degraded': return 'bg-amber-500'
+      case 'down': return 'bg-red-500'
     }
   }
 
@@ -199,59 +231,39 @@ const Dashboard = () => {
 
   return (
     <div className="space-y-6">
+      {/* Welcome header */}
+      <div className="animate-slide-up">
+        <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 mb-1">
+          <Sparkles size={14} className="text-primary-500" />
+          <span>AI-powered job hunting</span>
+        </div>
+      </div>
+
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card>
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Jobs Found</p>
-              <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">{statsData?.totalJobsFound || 0}</p>
-              <p className="mt-1 text-xs text-gray-500 dark:text-gray-500">+24 this week</p>
-            </div>
-            <div className="rounded-lg bg-blue-100 p-3 dark:bg-blue-900">
-              <TrendingUp className="text-blue-600 dark:text-blue-400" size={24} />
-            </div>
-          </div>
-        </Card>
-
-        <Card>
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Applications This Week</p>
-              <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">{statsData?.applicationsThisWeek || 0}</p>
-              <p className="mt-1 text-xs text-gray-500 dark:text-gray-500">Goal: 20</p>
-            </div>
-            <div className="rounded-lg bg-purple-100 p-3 dark:bg-purple-900">
-              <Zap className="text-purple-600 dark:text-purple-400" size={24} />
-            </div>
-          </div>
-        </Card>
-
-        <Card>
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Response Rate</p>
-              <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">{statsData?.responseRate || 0}%</p>
-              <p className="mt-1 text-xs text-gray-500 dark:text-gray-500">+4% this week</p>
-            </div>
-            <div className="rounded-lg bg-green-100 p-3 dark:bg-green-900">
-              <CheckCheck className="text-green-600 dark:text-green-400" size={24} />
-            </div>
-          </div>
-        </Card>
-
-        <Card>
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Interviews Scheduled</p>
-              <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">{statsData?.interviewsScheduled || 0}</p>
-              <p className="mt-1 text-xs text-gray-500 dark:text-gray-500">2 this week</p>
-            </div>
-            <div className="rounded-lg bg-orange-100 p-3 dark:bg-orange-900">
-              <Calendar className="text-orange-600 dark:text-orange-400" size={24} />
-            </div>
-          </div>
-        </Card>
+        {statCards.map((card, index) => {
+          const Icon = card.icon
+          const value = statsData?.[card.key as keyof StatsData] || 0
+          return (
+            <Card key={card.key} hover className={`animate-slide-up stagger-${index + 1}`}>
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-500 dark:text-gray-400">{card.label}</p>
+                  <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white tracking-tight">
+                    {value}{card.suffix || ''}
+                  </p>
+                  <div className="mt-1.5 flex items-center gap-1">
+                    <ArrowUpRight size={12} className="text-emerald-500" />
+                    <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400">{card.sub}</p>
+                  </div>
+                </div>
+                <div className={`rounded-2xl bg-gradient-to-br ${card.gradient} p-3 shadow-lg ${card.shadowColor}`}>
+                  <Icon className="text-white" size={22} />
+                </div>
+              </div>
+            </Card>
+          )
+        })}
       </div>
 
       {/* Main Content Grid */}
@@ -259,26 +271,33 @@ const Dashboard = () => {
         {/* Activity Timeline & Trends */}
         <div className="lg:col-span-2 space-y-6">
           {/* Activity Timeline */}
-          <Card>
-            <div className="flex items-center justify-between mb-4">
+          <Card className="animate-slide-up stagger-5">
+            <div className="flex items-center justify-between mb-5">
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Recent Activity</h2>
-              <button className="text-sm text-primary-600 hover:text-primary-700 dark:text-primary-400">View all</button>
+              <button className="text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 transition-colors">
+                View all
+              </button>
             </div>
 
             {activityData && activityData.length > 0 ? (
               <div className="space-y-4">
-                {activityData.map((event) => (
-                  <div key={event.id} className="flex gap-4 pb-4 border-b border-gray-200 dark:border-gray-800 last:border-0 last:pb-0">
-                    <div className="flex-shrink-0 pt-1">{getActivityIcon(event.type)}</div>
+                {activityData.map((event, i) => (
+                  <div
+                    key={event.id}
+                    className={`flex gap-4 pb-4 border-b border-gray-100 dark:border-gray-800/50 last:border-0 last:pb-0 group`}
+                  >
+                    <div className="flex-shrink-0 transition-transform duration-200 group-hover:scale-110">
+                      {getActivityIcon(event.type)}
+                    </div>
                     <div className="flex-1 min-w-0">
-                      <p className="font-medium text-gray-900 dark:text-white">{event.title}</p>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">{event.description}</p>
+                      <p className="font-semibold text-gray-900 dark:text-white text-sm">{event.title}</p>
+                      <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{event.description}</p>
                       {event.jobTitle && (
-                        <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">
+                        <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
                           {event.jobTitle} {event.company && `at ${event.company}`}
                         </p>
                       )}
-                      <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">{formatTime(event.timestamp)}</p>
+                      <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">{formatTime(event.timestamp)}</p>
                     </div>
                   </div>
                 ))}
@@ -289,18 +308,44 @@ const Dashboard = () => {
           </Card>
 
           {/* Trends Chart */}
-          <Card>
-            <h2 className="mb-4 text-lg font-semibold text-gray-900 dark:text-white">Weekly Trends</h2>
+          <Card className="animate-slide-up stagger-6">
+            <h2 className="mb-5 text-lg font-semibold text-gray-900 dark:text-white">Weekly Trends</h2>
             <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={trendData || []}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgb(229, 231, 235)" />
-                <XAxis dataKey="date" tick={{ fontSize: 12 }} />
-                <YAxis tick={{ fontSize: 12 }} />
-                <Tooltip contentStyle={{ backgroundColor: 'rgb(31, 41, 55)', border: 'none', borderRadius: '8px', color: 'white' }} />
-                <Legend />
-                <Bar dataKey="found" fill="rgb(59, 130, 246)" name="Jobs Found" />
-                <Bar dataKey="applied" fill="rgb(34, 197, 94)" name="Applications" />
-                <Bar dataKey="responses" fill="rgb(168, 85, 247)" name="Responses" />
+              <BarChart data={trendData || []} barGap={4}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(156, 163, 175, 0.15)" vertical={false} />
+                <XAxis dataKey="date" tick={{ fontSize: 12, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 12, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: 'rgba(17, 24, 39, 0.95)',
+                    border: 'none',
+                    borderRadius: '12px',
+                    color: 'white',
+                    boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+                    backdropFilter: 'blur(8px)',
+                    padding: '12px 16px',
+                  }}
+                />
+                <Legend
+                  wrapperStyle={{ fontSize: '12px', paddingTop: '16px' }}
+                />
+                <Bar dataKey="found" fill="url(#blueGradient)" name="Jobs Found" radius={[6, 6, 0, 0]} />
+                <Bar dataKey="applied" fill="url(#greenGradient)" name="Applications" radius={[6, 6, 0, 0]} />
+                <Bar dataKey="responses" fill="url(#purpleGradient)" name="Responses" radius={[6, 6, 0, 0]} />
+                <defs>
+                  <linearGradient id="blueGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#6366f1" />
+                    <stop offset="100%" stopColor="#818cf8" />
+                  </linearGradient>
+                  <linearGradient id="greenGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#10b981" />
+                    <stop offset="100%" stopColor="#34d399" />
+                  </linearGradient>
+                  <linearGradient id="purpleGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#8b5cf6" />
+                    <stop offset="100%" stopColor="#a78bfa" />
+                  </linearGradient>
+                </defs>
               </BarChart>
             </ResponsiveContainer>
           </Card>
@@ -309,59 +354,66 @@ const Dashboard = () => {
         {/* Right Sidebar */}
         <div className="space-y-6">
           {/* Quick Actions */}
-          <Card>
+          <Card className="animate-slide-up stagger-3">
             <h2 className="mb-4 text-lg font-semibold text-gray-900 dark:text-white">Quick Actions</h2>
-            <div className="space-y-2">
-              <button className="w-full rounded-lg bg-primary-600 px-4 py-2 text-white hover:bg-primary-700 transition-colors font-medium">
+            <div className="space-y-2.5">
+              <button className="w-full rounded-xl bg-gradient-to-r from-primary-600 to-primary-500 px-4 py-3 text-white font-semibold shadow-md shadow-primary-500/20 hover:shadow-lg hover:shadow-primary-500/30 hover:from-primary-500 hover:to-primary-400 transition-all duration-200 active:scale-[0.98]">
                 Trigger Scrape
               </button>
-              <button className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 hover:bg-gray-50 transition-colors dark:border-gray-700 dark:bg-gray-800 dark:hover:bg-gray-700 font-medium">
+              <button className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-semibold text-gray-700 shadow-sm hover:bg-gray-50 hover:border-gray-300 hover:shadow transition-all duration-200 active:scale-[0.98] dark:border-gray-700 dark:bg-gray-800/50 dark:text-gray-200 dark:hover:bg-gray-800 dark:hover:border-gray-600">
                 Score Jobs
               </button>
-              <button className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 hover:bg-gray-50 transition-colors dark:border-gray-700 dark:bg-gray-800 dark:hover:bg-gray-700 font-medium">
+              <button className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-semibold text-gray-700 shadow-sm hover:bg-gray-50 hover:border-gray-300 hover:shadow transition-all duration-200 active:scale-[0.98] dark:border-gray-700 dark:bg-gray-800/50 dark:text-gray-200 dark:hover:bg-gray-800 dark:hover:border-gray-600">
                 View Review Queue
               </button>
             </div>
           </Card>
 
           {/* Upcoming Actions */}
-          <Card>
+          <Card className="animate-slide-up stagger-4">
             <h2 className="mb-4 text-lg font-semibold text-gray-900 dark:text-white">Follow-ups Due</h2>
             {followUpData && followUpData.length > 0 ? (
               <div className="space-y-3">
                 {followUpData.map((followUp) => (
-                  <div key={followUp.id} className="rounded-lg border border-yellow-200 bg-yellow-50 p-3 dark:border-yellow-900 dark:bg-yellow-900/20">
-                    <div className="flex items-start gap-2">
-                      <Clock size={16} className="mt-1 text-yellow-600 dark:text-yellow-500 flex-shrink-0" />
+                  <div key={followUp.id} className="group rounded-xl border border-amber-200/60 bg-gradient-to-r from-amber-50 to-orange-50 p-3.5 transition-all duration-200 hover:shadow-sm hover:border-amber-300/60 dark:border-amber-800/30 dark:from-amber-900/10 dark:to-orange-900/10 dark:hover:border-amber-700/40">
+                    <div className="flex items-start gap-2.5">
+                      <div className="rounded-lg bg-amber-100 p-1.5 dark:bg-amber-900/30">
+                        <Clock size={14} className="text-amber-600 dark:text-amber-400" />
+                      </div>
                       <div className="min-w-0">
-                        <p className="font-medium text-sm text-gray-900 dark:text-white">{followUp.jobTitle}</p>
-                        <p className="text-xs text-gray-600 dark:text-gray-400">{followUp.company}</p>
-                        <p className="text-xs text-yellow-700 dark:text-yellow-200 mt-1">{formatTime(followUp.dueDate)}</p>
+                        <p className="font-semibold text-sm text-gray-900 dark:text-white">{followUp.jobTitle}</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">{followUp.company}</p>
+                        <p className="text-xs font-medium text-amber-600 dark:text-amber-300 mt-1">{formatTime(followUp.dueDate)}</p>
                       </div>
                     </div>
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-gray-600 dark:text-gray-400">No follow-ups due today</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">No follow-ups due today</p>
             )}
           </Card>
 
           {/* Source Health */}
-          <Card>
+          <Card className="animate-slide-up stagger-5">
             <h2 className="mb-4 text-lg font-semibold text-gray-900 dark:text-white">Source Health</h2>
-            <div className="space-y-3">
+            <div className="space-y-2">
               {sourceHealthData &&
                 sourceHealthData.map((source) => (
-                  <div key={source.name} className="flex items-center justify-between p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800">
-                    <div className="flex items-center gap-2">
-                      <div className={`w-2 h-2 rounded-full ${getStatusDot(source.status)}`} />
+                  <div key={source.name} className="flex items-center justify-between p-2.5 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800/30 transition-colors duration-200 group">
+                    <div className="flex items-center gap-3">
+                      <div className="relative">
+                        <div className={`w-2.5 h-2.5 rounded-full ${getStatusDot(source.status)}`} />
+                        {source.status === 'healthy' && (
+                          <div className={`absolute inset-0 w-2.5 h-2.5 rounded-full ${getStatusDot(source.status)} animate-ping opacity-30`} />
+                        )}
+                      </div>
                       <div>
                         <p className="text-sm font-medium text-gray-900 dark:text-white">{source.name}</p>
-                        <p className="text-xs text-gray-500 dark:text-gray-500">{source.lastJobsFound} jobs</p>
+                        <p className="text-xs text-gray-400 dark:text-gray-500">{source.lastJobsFound} jobs</p>
                       </div>
                     </div>
-                    <span className={`text-xs font-medium ${getStatusColor(source.status)}`}>
+                    <span className={`text-xs font-semibold ${getStatusColor(source.status)}`}>
                       {source.status === 'healthy' && 'OK'}
                       {source.status === 'degraded' && 'Slow'}
                       {source.status === 'down' && 'Down'}
