@@ -18,8 +18,8 @@ COPY . .
 
 RUN npm run build
 
-EXPOSE 3001
+EXPOSE 3000
 
 ENV NODE_ENV=production
 
-CMD ["npm", "start"]
+CMD ["sh", "-c", "npx prisma db push --skip-generate && npm start"]
