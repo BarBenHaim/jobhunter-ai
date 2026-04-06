@@ -22,4 +22,4 @@ EXPOSE 3000
 
 ENV NODE_ENV=production
 
-CMD ["sh", "-c", "npx prisma db push --skip-generate && nhpm start"]
+CMD ["sh", "-c", "npx prisma db push --skip-generate && npm start"]
