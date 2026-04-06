@@ -12,7 +12,6 @@ import {
   BarChart3,
   Settings,
   Bell,
-  Network,
   Zap,
 } from 'lucide-react'
 import { useAppStore } from '@/stores/app.store'
@@ -35,29 +34,35 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     useAppStore()
 
   return (
-    <div className="flex h-screen bg-gray-50 dark:bg-gray-950">
+    <div className="flex h-screen bg-gradient-to-br from-gray-50 via-gray-50 to-primary-50/30 dark:from-gray-950 dark:via-gray-950 dark:to-primary-950/20">
       {/* Mobile menu button */}
       <button
         onClick={() => setMobileOpen(!mobileOpen)}
-        className="fixed left-4 top-4 z-50 rounded-lg p-2 lg:hidden"
+        className="fixed left-4 top-4 z-50 rounded-xl p-2.5 glass shadow-glass lg:hidden active:scale-95 transition-transform"
       >
-        {mobileOpen ? <X size={24} /> : <Menu size={24} />}
+        {mobileOpen ? <X size={22} /> : <Menu size={22} />}
       </button>
 
       {/* Sidebar */}
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex w-64 flex-col overflow-y-auto border-r border-gray-200 bg-white transition-all duration-300 dark:border-gray-800 dark:bg-gray-900 lg:relative lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-40 flex w-[260px] flex-col overflow-y-auto
+          border-r border-gray-200/30 bg-white/80 backdrop-blur-xl
+          transition-all duration-300 ease-out
+          dark:border-gray-800/30 dark:bg-gray-900/80
+          lg:relative lg:translate-x-0 ${
           sidebarCollapsed ? '-translate-x-full' : ''
         } ${mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}
       >
         {/* Logo */}
-        <div className="flex items-center gap-2 border-b border-gray-200 px-6 py-4 dark:border-gray-800">
-          <Zap className="h-6 w-6 text-primary-600" />
-          <h1 className="text-lg font-bold text-gray-900 dark:text-white">JobHunter AI</h1>
+        <div className="flex items-center gap-3 px-6 py-5">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-primary-500 to-purple-500 shadow-md shadow-primary-500/20">
+            <Zap className="h-5 w-5 text-white" />
+          </div>
+          <h1 className="text-lg font-bold gradient-text">JobHunter AI</h1>
         </div>
 
         {/* Nav items */}
-        <nav className="flex-1 space-y-1 px-3 py-6">
+        <nav className="flex-1 space-y-1 px-3 py-4">
           {navItems.map(({ label, path, icon: Icon }) => {
             const isActive = location.pathname === path
             return (
@@ -65,29 +70,37 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
                 key={path}
                 to={path}
                 onClick={() => setMobileOpen(false)}
-                className={`flex items-center gap-3 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors ${
+                className={`group flex items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-medium transition-all duration-200 ${
                   isActive
-                    ? 'bg-primary-100 text-primary-700 dark:bg-primary-900 dark:text-primary-200'
-                    : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'
+                    ? 'bg-primary-50 text-primary-700 shadow-sm dark:bg-primary-900/30 dark:text-primary-300'
+                    : 'text-gray-600 hover:bg-gray-100/80 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800/50 dark:hover:text-gray-200'
                 }`}
               >
-                <Icon size={18} />
+                <Icon
+                  size={18}
+                  className={`transition-transform duration-200 group-hover:scale-110 ${
+                    isActive ? 'text-primary-600 dark:text-primary-400' : ''
+                  }`}
+                />
                 {label}
+                {isActive && (
+                  <div className="ml-auto h-1.5 w-1.5 rounded-full bg-primary-500 animate-pulse-soft" />
+                )}
               </Link>
             )
           })}
         </nav>
 
         {/* System health indicator */}
-        <div className="border-t border-gray-200 px-3 py-4 dark:border-gray-800">
+        <div className="mx-3 mb-4">
           <div
-            className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm ${
+            className={`flex items-center gap-2.5 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-300 ${
               systemHealthy
-                ? 'bg-success-100 text-success-700 dark:bg-success-900 dark:text-success-200'
-                : 'bg-error-100 text-error-700 dark:bg-error-900 dark:text-error-200'
+                ? 'bg-success-50/80 text-success-700 dark:bg-success-900/20 dark:text-success-300'
+                : 'bg-error-50/80 text-error-700 dark:bg-error-900/20 dark:text-error-300'
             }`}
           >
-            <div className={`h-2 w-2 rounded-full ${systemHealthy ? 'bg-success-500' : 'bg-error-500'}`} />
+            <div className={`h-2 w-2 rounded-full animate-pulse-soft ${systemHealthy ? 'bg-success-500' : 'bg-error-500'}`} />
             {systemHealthy ? 'System Healthy' : 'System Issues'}
           </div>
         </div>
@@ -96,22 +109,25 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       {/* Main content */}
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Top bar */}
-        <header className="border-b border-gray-200 bg-white px-6 py-4 dark:border-gray-800 dark:bg-gray-900">
+        <header className="border-b border-gray-200/30 bg-white/60 backdrop-blur-xl px-6 py-4 dark:border-gray-800/30 dark:bg-gray-900/60">
           <div className="flex items-center justify-between">
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-white tracking-tight">
               {navItems.find(({ path }) => path === location.pathname)?.label || 'Dashboard'}
             </h2>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
               <button
                 onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-                className="hidden rounded-lg p-2 hover:bg-gray-100 dark:hover:bg-gray-800 lg:flex"
+                className="hidden rounded-xl p-2.5 text-gray-500 hover:bg-gray-100/80 hover:text-gray-700 transition-all duration-200 dark:hover:bg-gray-800/50 dark:text-gray-400 dark:hover:text-gray-200 lg:flex"
               >
                 <Menu size={20} />
               </button>
-              <button className="relative rounded-lg p-2 hover:bg-gray-100 dark:hover:bg-gray-800">
+              <button className="relative rounded-xl p-2.5 text-gray-500 hover:bg-gray-100/80 hover:text-gray-700 transition-all duration-200 dark:hover:bg-gray-800/50 dark:text-gray-400 dark:hover:text-gray-200">
                 <Bell size={20} />
                 {toasts.length > 0 && (
-                  <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-error-500" />
+                  <span className="absolute right-1.5 top-1.5 flex h-2.5 w-2.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-primary-500" />
+                  </span>
                 )}
               </button>
             </div>
@@ -119,7 +135,11 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
         </header>
 
         {/* Content */}
-        <main className="flex-1 overflow-auto p-6">{children}</main>
+        <main className="flex-1 overflow-auto p-6">
+          <div className="animate-fade-in">
+            {children}
+          </div>
+        </main>
       </div>
 
       {/* Toast notifications */}
@@ -127,20 +147,20 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
         {toasts.map(({ id, message, type }) => (
           <div
             key={id}
-            className={`animate-slide-in flex items-center gap-3 rounded-lg px-4 py-3 text-white shadow-lg ${
+            className={`animate-slide-up flex items-center gap-3 rounded-2xl px-5 py-3.5 text-white shadow-lg backdrop-blur-sm ${
               type === 'success'
-                ? 'bg-success-500'
+                ? 'bg-success-500/90'
                 : type === 'error'
-                  ? 'bg-error-500'
+                  ? 'bg-error-500/90'
                   : type === 'warning'
-                    ? 'bg-warning-500'
-                    : 'bg-primary-500'
+                    ? 'bg-warning-500/90'
+                    : 'bg-primary-500/90'
             }`}
           >
-            <span>{message}</span>
+            <span className="font-medium">{message}</span>
             <button
               onClick={() => removeToast(id)}
-              className="ml-auto rounded hover:opacity-80"
+              className="ml-auto rounded-lg p-0.5 hover:bg-white/20 transition-colors"
             >
               <X size={16} />
             </button>
@@ -151,10 +171,10 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       {/* Mobile overlay */}
       {mobileOpen && (
         <div
-          className="fixed inset-0 z-30 bg-black/50 lg:hidden"
+          className="fixed inset-0 z-30 bg-black/30 backdrop-blur-sm lg:hidden animate-fade-in"
           onClick={() => setMobileOpen(false)}
         />
       )}
     </div>
   )
-}
+              }
