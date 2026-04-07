@@ -316,6 +316,39 @@ router.post(
   })
 );
 
+// POST /api/cv/generate-for-job - Generate CV tailored to specific job
+router.post(
+  '/generate-for-job',
+  [
+    body('jobId').isString().notEmpty().withMessage('Job ID is required'),
+  ],
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid input',
+          details: errors.array(),
+        },
+      });
+      return;
+    }
+
+    const result = await cvService.generateJobTailoredCV(
+      req.userId,
+      req.body.jobId,
+      'both'
+    );
+
+    res.status(200).json({
+      success: true,
+      data: result,
+    });
+  })
+);
+
 // POST /api/cv/generate-ats-versions - Generate multiple ATS variants
 router.post(
   '/generate-ats-versions',

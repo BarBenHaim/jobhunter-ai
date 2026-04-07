@@ -57,4 +57,9 @@ export const cvApi = {
     const { data } = await apiClient.post('/cv/generate-ats-versions')
     return data
   },
+
+  async generateForJob(jobId: string): Promise<any> {
+    const { data } = await apiClient.post('/cv/generate-for-job', { jobId })
+    return data
+  },
 }

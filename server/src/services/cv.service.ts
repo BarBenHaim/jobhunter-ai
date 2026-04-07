@@ -401,6 +401,99 @@ export class CVService {
   }
 
   /**
+   * Generate a CV deeply tailored to a specific job posting
+   */
+  async generateJobTailoredCV(userId: string, jobId: string, format: string = 'both') {
+    try {
+      logger.info(`Generating job-tailored CV`, { userId, jobId, format });
+
+      // Ensure output directory exists
+      await fs.mkdir(this.cvOutputDir, { recursive: true });
+
+      // Fetch user profile
+      const userProfile = await prisma.userProfile.findUnique({
+        where: { id: userId },
+      });
+
+      if (!userProfile) {
+        throw new NotFoundError('User profile not found');
+      }
+
+      // Fetch the specific job
+      const job = await prisma.job.findUnique({
+        where: { id: jobId },
+      });
+
+      if (!job) {
+        throw new NotFoundError('Job not found');
+      }
+
+      // Call AI to generate CV content tailored to THIS specific job
+      const cvContent = await aiClient.generateCVContent(
+        {
+          id: job.id,
+          title: job.title,
+          company: job.company,
+          description: job.description,
+          requirements: job.requirements,
+        } as any,
+        {
+          name: userProfile.fullName || 'Professional',
+          title: userProfile.fullName || 'Professional',
+          targetKeywords: [],
+        },
+        userProfile.structuredProfile as any
+      );
+
+      if (!cvContent) {
+        throw new AIError('Failed to generate CV content');
+      }
+
+      // Generate files based on format
+      let pdfPath: string | null = null;
+      let docxPath: string | null = null;
+
+      if (format === 'pdf' || format === 'both') {
+        pdfPath = await this.generatePdfFile(userProfile, cvContent);
+      }
+
+      if (format === 'docx' || format === 'both') {
+        docxPath = await this.generateDocxFile(userProfile, cvContent);
+      }
+
+      // Run ATS validation
+      const atsValidation = await this.atsCheck(cvContent);
+
+      logger.info(`Job-tailored CV generated`, {
+        userId,
+        jobId,
+        pdfPath,
+        docxPath,
+        atsScore: atsValidation.score,
+      });
+
+      return {
+        userId,
+        jobId,
+        pdfPath,
+        docxPath,
+        atsScore: atsValidation.score,
+        tailoringDetails: {
+          summary: cvContent.summary || '',
+          skills: cvContent.skills || [],
+          matchPercentage: atsValidation.score,
+          tailoredHighlights: cvContent.tailoredHighlights || [],
+          keywordInjections: cvContent.keywordInjections || [],
+        },
+        generatedAt: new Date().toISOString(),
+      };
+    } catch (error) {
+      logger.error('Error generating job-tailored CV:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Generate multiple ATS variants of a CV (general, frontend, backend, fullstack, data, ai)
    */
   async generateATSVersions(userId: string) {
