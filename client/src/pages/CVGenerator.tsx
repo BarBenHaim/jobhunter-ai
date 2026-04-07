@@ -112,6 +112,27 @@ export default function CVGenerator() {
 
   const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:3001/api'
 
+  const handleDownload = async (filePath: string, fileName: string) => {
+    try {
+      const token = localStorage.getItem('token')
+      const res = await fetch(`${apiBase}/cv/download?path=${encodeURIComponent(filePath)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) throw new Error('Download failed')
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = fileName
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      setError('Failed to download file')
+    }
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -215,26 +236,22 @@ export default function CVGenerator() {
                 <div className="space-y-2">
                   <div className="flex gap-2">
                     {result.docxPath && (
-                      <a
-                        href={`${apiBase}/cv/download?path=${encodeURIComponent(result.docxPath)}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                      <button
+                        onClick={() => handleDownload(result.docxPath, `${variant.id}-cv.docx`)}
                         className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 text-sm font-medium hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors"
                       >
                         <Download size={14} />
                         DOCX
-                      </a>
+                      </button>
                     )}
                     {result.pdfPath && (
-                      <a
-                        href={`${apiBase}/cv/download?path=${encodeURIComponent(result.pdfPath)}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                      <button
+                        onClick={() => handleDownload(result.pdfPath, `${variant.id}-cv.pdf`)}
                         className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 text-sm font-medium hover:bg-purple-100 dark:hover:bg-purple-900/30 transition-colors"
                       >
                         <Download size={14} />
                         PDF
-                      </a>
+                      </button>
                     )}
                   </div>
                   <button
