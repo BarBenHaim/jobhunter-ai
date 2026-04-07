@@ -1,444 +1,367 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   FileText,
   Upload,
   Wand2,
   Edit2,
-  Check,
   AlertCircle,
   Briefcase,
   BookOpen,
   Globe,
+  GraduationCap,
+  Code,
+  Shield,
+  Languages,
+  Loader2,
+  CheckCircle,
+  User,
+  MapPin,
+  Mail,
+  Phone,
+  Linkedin,
+  Github,
 } from 'lucide-react'
 import { Card } from '@/components/common/Card'
 import { Badge } from '@/components/common/Badge'
-import { EmptyState } from '@/components/common/EmptyState'
-
-interface ProfileData {
-  id: string
-  rawInput?: string
-  skills: Array<{
-    name: string
-    proficiency: number // 0-100
-    frequency: number
-  }>
-  experience: Array<{
-    id: string
-    title: string
-    company: string
-    duration: string
-    description: string
-  }>
-  projects: Array<{
-    id: string
-    name: string
-    description: string
-    technologies: string[]
-    link?: string
-  }>
-  education: Array<{
-    id: string
-    school: string
-    degree: string
-    field: string
-    year: string
-  }>
-  certifications: Array<{
-    id: string
-    name: string
-    issuer: string
-    year: string
-  }>
-  languages: Array<{
-    name: string
-    proficiency: 'beginner' | 'intermediate' | 'advanced' | 'native'
-  }>
-  gapAnalysis: {
-    missingSkills: string[]
-    areasForImprovement: string[]
-    recommendations: string[]
-  }
-}
+import { profileApi } from '@/services/profile.api'
 
 const Profile = () => {
-  const [activeView, setActiveView] = useState<'input' | 'profile'>('input')
+  const queryClient = useQueryClient()
   const [rawInput, setRawInput] = useState('')
   const [isProcessing, setIsProcessing] = useState(false)
-  const [editingSection, setEditingSection] = useState<string | null>(null)
+  const [successMsg, setSuccessMsg] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
-  // Fetch profile
-  const { data: profile } = useQuery<ProfileData>({
+  // Fetch profile using the SAME queryKey as App.tsx to share cache
+  const { data: profile, isLoading } = useQuery({
     queryKey: ['profile'],
-    queryFn: async () => null,
+    queryFn: () => profileApi.getProfile(),
   })
 
-  const handleProcessInput = async () => {
+  const sp = profile?.structuredProfile as any
+  const hasStructuredData = sp && (sp.experience?.length > 0 || sp.skills || sp.education?.length > 0)
+
+  const handleSubmitKnowledge = async () => {
+    if (!rawInput.trim()) return
     setIsProcessing(true)
-    // Simulate API call
-    setTimeout(() => {
+    setError(null)
+    try {
+      await profileApi.submitKnowledge({ rawText: rawInput })
+      queryClient.invalidateQueries({ queryKey: ['profile'] })
+      setSuccessMsg('הפרופיל עודכן בהצלחה!')
+      setRawInput('')
+      setTimeout(() => setSuccessMsg(null), 3000)
+    } catch (err: any) {
+      setError(err?.message || 'שגיאה בעדכון הפרופיל')
+    } finally {
       setIsProcessing(false)
-      setActiveView('profile')
-    }, 2000)
-  }
-
-  const getProficiencyColor = (level: number): 'success' | 'warning' | 'primary' | 'error' => {
-    if (level >= 80) return 'success'
-    if (level >= 60) return 'primary'
-    if (level >= 40) return 'warning'
-    return 'error'
-  }
-
-  const getProficiencyLabel = (level: 'beginner' | 'intermediate' | 'advanced' | 'native'): string => {
-    switch (level) {
-      case 'beginner':
-        return 'Beginner'
-      case 'intermediate':
-        return 'Intermediate'
-      case 'advanced':
-        return 'Advanced'
-      case 'native':
-        return 'Native'
     }
   }
 
-  if (!profile) {
+  if (isLoading) {
     return (
-      <div className="max-w-2xl mx-auto space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Create Your Profile</h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-2">
-            Share your professional background. Our AI will extract and organize your information.
-          </p>
-        </div>
-
-        {/* Text Input */}
-        <Card>
-          <label className="block text-sm font-semibold text-gray-900 dark:text-white mb-3">
-            Paste your professional background
-          </label>
-          <textarea
-            value={rawInput}
-            onChange={(e) => setRawInput(e.target.value)}
-            placeholder="Share your work experience, skills, education, projects, and achievements. Feel free to paste from your CV or write freely."
-            className="w-full rounded-lg border border-gray-300 px-4 py-3 dark:border-gray-700 dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-primary-500"
-            rows={12}
-          />
-          <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">
-            The more detail you provide, the better our AI can tailor your applications.
-          </p>
-        </Card>
-
-        {/* File Upload */}
-        <Card>
-          <div className="text-center">
-            <div className="rounded-lg bg-gray-100 p-8 dark:bg-gray-800">
-              <Upload className="mx-auto mb-3 text-gray-400" size={32} />
-              <p className="text-sm font-medium text-gray-900 dark:text-white">Or upload your CV</p>
-              <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">PDF, DOCX, or TXT</p>
-              <button className="mt-4 rounded-lg bg-primary-600 px-4 py-2 text-white hover:bg-primary-700 font-medium">
-                Choose File
-              </button>
-            </div>
-          </div>
-        </Card>
-
-        {/* Process Button */}
-        <button
-          onClick={handleProcessInput}
-          disabled={!rawInput.trim() || isProcessing}
-          className="w-full rounded-lg bg-primary-600 px-4 py-3 text-white hover:bg-primary-700 disabled:opacity-50 font-semibold flex items-center justify-center gap-2 transition-all"
-        >
-          <Wand2 size={20} />
-          {isProcessing ? 'Processing...' : 'Process with AI'}
-        </button>
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="animate-spin h-8 w-8 text-primary-500" />
       </div>
     )
   }
 
-  if (activeView === 'input') {
-    return (
-      <div className="max-w-2xl mx-auto space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Create Your Profile</h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-2">
-            Share your professional background. Our AI will extract and organize your information.
-          </p>
-        </div>
-
-        {/* Text Input */}
-        <Card>
-          <label className="block text-sm font-semibold text-gray-900 dark:text-white mb-3">
-            Paste your professional background
-          </label>
-          <textarea
-            value={rawInput}
-            onChange={(e) => setRawInput(e.target.value)}
-            placeholder="Share your work experience, skills, education, projects, and achievements. Feel free to paste from your CV or write freely."
-            className="w-full rounded-lg border border-gray-300 px-4 py-3 dark:border-gray-700 dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-primary-500"
-            rows={12}
-          />
-          <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">
-            The more detail you provide, the better our AI can tailor your applications.
-          </p>
-        </Card>
-
-        {/* File Upload */}
-        <Card>
-          <div className="text-center">
-            <div className="rounded-lg bg-gray-100 p-8 dark:bg-gray-800">
-              <Upload className="mx-auto mb-3 text-gray-400" size={32} />
-              <p className="text-sm font-medium text-gray-900 dark:text-white">Or upload your CV</p>
-              <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">PDF, DOCX, or TXT</p>
-              <button className="mt-4 rounded-lg bg-primary-600 px-4 py-2 text-white hover:bg-primary-700 font-medium">
-                Choose File
-              </button>
-            </div>
-          </div>
-        </Card>
-
-        {/* Process Button */}
-        <button
-          onClick={handleProcessInput}
-          disabled={!rawInput.trim() || isProcessing}
-          className="w-full rounded-lg bg-primary-600 px-4 py-3 text-white hover:bg-primary-700 disabled:opacity-50 font-semibold flex items-center justify-center gap-2 transition-all"
-        >
-          <Wand2 size={20} />
-          {isProcessing ? 'Processing...' : 'Process with AI'}
-        </button>
-      </div>
-    )
+  // Extract skills as flat array from structured profile
+  const getSkillsList = (): string[] => {
+    if (!sp?.skills) return []
+    const skills: string[] = []
+    if (typeof sp.skills === 'object' && !Array.isArray(sp.skills)) {
+      for (const category of Object.values(sp.skills)) {
+        if (Array.isArray(category)) {
+          skills.push(...category)
+        }
+      }
+    } else if (Array.isArray(sp.skills)) {
+      for (const s of sp.skills) {
+        if (typeof s === 'string') skills.push(s)
+        else if (s?.name) skills.push(s.name)
+      }
+    }
+    return skills
   }
+
+  const skillsList = getSkillsList()
+  const experiences = sp?.experience || []
+  const education = sp?.education || []
+  const projects = sp?.projects || []
+  const military = sp?.military
+  const spokenLanguages = sp?.spokenLanguages || []
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Professional Profile</h1>
-        <button
-          onClick={() => setActiveView('input')}
-          className="rounded-lg border border-gray-300 px-4 py-2 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800 font-medium"
-        >
-          Update Profile
-        </button>
+      {/* Header Card */}
+      <div className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-6">
+        <div className="flex flex-col sm:flex-row items-start gap-5">
+          <div className="h-20 w-20 rounded-2xl bg-gradient-to-br from-primary-500 to-purple-500 flex items-center justify-center text-white text-3xl font-bold shadow-lg shadow-primary-500/20 flex-shrink-0">
+            {profile?.fullName?.charAt(0) || <User size={32} />}
+          </div>
+          <div className="flex-1 min-w-0">
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+              {profile?.fullName || 'No Name'}
+            </h1>
+            {sp?.personalInfo?.title && (
+              <p className="text-primary-600 dark:text-primary-400 font-medium mt-0.5">{sp.personalInfo.title}</p>
+            )}
+            {sp?.summary && (
+              <p className="text-sm text-gray-600 dark:text-gray-400 mt-2 leading-relaxed">{sp.summary}</p>
+            )}
+
+            {/* Contact Info */}
+            <div className="flex flex-wrap gap-4 mt-3">
+              {profile?.email && (
+                <span className="flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400">
+                  <Mail size={14} /> {profile.email}
+                </span>
+              )}
+              {profile?.phone && (
+                <span className="flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400">
+                  <Phone size={14} /> {profile.phone}
+                </span>
+              )}
+              {profile?.location && (
+                <span className="flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400">
+                  <MapPin size={14} /> {profile.location}
+                </span>
+              )}
+              {profile?.linkedinUrl && (
+                <a href={profile.linkedinUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-sm text-primary-600 hover:text-primary-700">
+                  <Linkedin size={14} /> LinkedIn
+                </a>
+              )}
+              {profile?.githubUrl && (
+                <a href={profile.githubUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-sm text-primary-600 hover:text-primary-700">
+                  <Github size={14} /> GitHub
+                </a>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
+
+      {/* Messages */}
+      {successMsg && (
+        <div className="rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 p-4 flex items-center gap-3">
+          <CheckCircle className="h-5 w-5 text-green-500 flex-shrink-0" />
+          <p className="text-green-700 dark:text-green-400 text-sm font-medium">{successMsg}</p>
+        </div>
+      )}
+      {error && (
+        <div className="rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-4 flex items-center gap-3">
+          <AlertCircle className="h-5 w-5 text-red-500 flex-shrink-0" />
+          <p className="text-red-700 dark:text-red-400 text-sm font-medium">{error}</p>
+        </div>
+      )}
 
       {/* Skills Section */}
-      <Card>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Skills</h2>
-          <button
-            onClick={() => setEditingSection(editingSection === 'skills' ? null : 'skills')}
-            className="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-800"
-          >
-            <Edit2 size={18} className="text-gray-600 dark:text-gray-400" />
-          </button>
-        </div>
+      {skillsList.length > 0 && (
+        <Card>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+            <Code size={20} className="text-primary-500" />
+            Technical Skills
+          </h2>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {profile?.skills.map((skill) => (
-            <div key={skill.name}>
-              <div className="flex items-center justify-between mb-2">
-                <span className="font-medium text-gray-900 dark:text-white">{skill.name}</span>
-                <span className="text-sm text-gray-600 dark:text-gray-400">{skill.proficiency}%</span>
-              </div>
-              <div className="h-2 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
-                <div
-                  className="h-full bg-gradient-to-r from-primary-500 to-primary-600 rounded-full"
-                  style={{ width: `${skill.proficiency}%` }}
-                />
-              </div>
+          {typeof sp?.skills === 'object' && !Array.isArray(sp.skills) ? (
+            // Categorized skills
+            <div className="space-y-3">
+              {Object.entries(sp.skills).map(([category, skills]: [string, any]) => (
+                Array.isArray(skills) && skills.length > 0 && (
+                  <div key={category}>
+                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300 capitalize mb-1.5">
+                      {category.replace(/([A-Z])/g, ' $1').trim()}
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {skills.map((skill: string) => (
+                        <Badge key={skill} variant="primary" size="sm">{skill}</Badge>
+                      ))}
+                    </div>
+                  </div>
+                )
+              ))}
             </div>
-          ))}
-        </div>
-      </Card>
+          ) : (
+            // Flat skills list
+            <div className="flex flex-wrap gap-2">
+              {skillsList.map((skill) => (
+                <Badge key={skill} variant="primary" size="sm">{skill}</Badge>
+              ))}
+            </div>
+          )}
+        </Card>
+      )}
 
       {/* Experience Section */}
-      <Card>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-            <Briefcase size={20} />
-            Experience
+      {experiences.length > 0 && (
+        <Card>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+            <Briefcase size={20} className="text-primary-500" />
+            Work Experience
           </h2>
-          <button
-            onClick={() => setEditingSection(editingSection === 'experience' ? null : 'experience')}
-            className="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-800"
-          >
-            <Edit2 size={18} className="text-gray-600 dark:text-gray-400" />
-          </button>
-        </div>
 
-        <div className="space-y-4">
-          {profile?.experience.map((exp, index) => (
-            <div key={exp.id} className={`pb-4 ${index !== profile.experience.length - 1 ? 'border-b border-gray-200 dark:border-gray-800' : ''}`}>
-              <h3 className="font-semibold text-gray-900 dark:text-white">{exp.title}</h3>
-              <p className="text-sm text-gray-600 dark:text-gray-400">{exp.company} • {exp.duration}</p>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">{exp.description}</p>
-            </div>
-          ))}
-        </div>
-      </Card>
-
-      {/* Projects Section */}
-      <Card>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Projects</h2>
-          <button
-            onClick={() => setEditingSection(editingSection === 'projects' ? null : 'projects')}
-            className="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-800"
-          >
-            <Edit2 size={18} className="text-gray-600 dark:text-gray-400" />
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {profile?.projects.map((project) => (
-            <div
-              key={project.id}
-              className="rounded-lg border border-gray-200 p-4 dark:border-gray-800 hover:shadow-md transition-shadow"
-            >
-              <div className="flex items-start justify-between mb-2">
-                <h3 className="font-semibold text-gray-900 dark:text-white">{project.name}</h3>
-                {project.link && (
-                  <a href={project.link} target="_blank" rel="noopener noreferrer" className="text-primary-600 hover:text-primary-700">
-                    <Globe size={16} />
-                  </a>
+          <div className="space-y-5">
+            {experiences.map((exp: any, index: number) => (
+              <div key={index} className={`${index !== experiences.length - 1 ? 'pb-5 border-b border-gray-100 dark:border-gray-700/50' : ''}`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="font-semibold text-gray-900 dark:text-white">{exp.title}</h3>
+                    <p className="text-primary-600 dark:text-primary-400 text-sm font-medium">{exp.company}</p>
+                  </div>
+                  <span className="text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">{exp.period}</span>
+                </div>
+                {exp.highlights && Array.isArray(exp.highlights) && (
+                  <ul className="mt-2 space-y-1">
+                    {exp.highlights.map((h: string, i: number) => (
+                      <li key={i} className="flex gap-2 text-sm text-gray-600 dark:text-gray-400">
+                        <span className="text-primary-500 flex-shrink-0 mt-1">•</span>
+                        <span>{h}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {exp.description && typeof exp.description === 'string' && (
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">{exp.description}</p>
                 )}
               </div>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">{project.description}</p>
-              <div className="flex flex-wrap gap-1">
-                {project.technologies.map((tech) => (
-                  <Badge key={tech} variant="gray" size="sm">
-                    {tech}
-                  </Badge>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      </Card>
-
-      {/* Education & Certifications */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Education */}
-        <Card>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-              <BookOpen size={20} />
-              Education
-            </h2>
-            <button
-              onClick={() => setEditingSection(editingSection === 'education' ? null : 'education')}
-              className="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-800"
-            >
-              <Edit2 size={18} className="text-gray-600 dark:text-gray-400" />
-            </button>
+            ))}
           </div>
+        </Card>
+      )}
 
-          <div className="space-y-3">
-            {profile?.education.map((edu) => (
-              <div key={edu.id}>
-                <p className="font-medium text-gray-900 dark:text-white">{edu.school}</p>
-                <p className="text-sm text-gray-600 dark:text-gray-400">{edu.degree} in {edu.field}</p>
-                <p className="text-xs text-gray-500 dark:text-gray-500">{edu.year}</p>
+      {/* Projects Section */}
+      {projects.length > 0 && (
+        <Card>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+            <FileText size={20} className="text-primary-500" />
+            Projects
+          </h2>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {projects.map((project: any, index: number) => (
+              <div key={index} className="rounded-xl border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md transition-shadow">
+                <h3 className="font-semibold text-gray-900 dark:text-white">{project.name}</h3>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{project.description}</p>
+                {project.technologies && Array.isArray(project.technologies) && (
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {project.technologies.map((tech: string) => (
+                      <Badge key={tech} variant="gray" size="sm">{tech}</Badge>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
           </div>
         </Card>
+      )}
 
-        {/* Certifications */}
+      {/* Education Section */}
+      {education.length > 0 && (
         <Card>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-              <Check size={20} />
-              Certifications
-            </h2>
-            <button
-              onClick={() => setEditingSection(editingSection === 'certifications' ? null : 'certifications')}
-              className="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-800"
-            >
-              <Edit2 size={18} className="text-gray-600 dark:text-gray-400" />
-            </button>
-          </div>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+            <GraduationCap size={20} className="text-primary-500" />
+            Education
+          </h2>
 
-          <div className="space-y-3">
-            {profile?.certifications.map((cert) => (
-              <div key={cert.id}>
-                <p className="font-medium text-gray-900 dark:text-white">{cert.name}</p>
-                <p className="text-sm text-gray-600 dark:text-gray-400">{cert.issuer}</p>
-                <p className="text-xs text-gray-500 dark:text-gray-500">{cert.year}</p>
-              </div>
-            ))}
-          </div>
-        </Card>
-      </div>
-
-      {/* Languages */}
-      <Card>
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Languages</h2>
-        <div className="flex flex-wrap gap-3">
-          {profile?.languages.map((lang) => (
-            <Badge key={lang.name} variant="primary" size="md">
-              {lang.name} - {getProficiencyLabel(lang.proficiency)}
-            </Badge>
-          ))}
-        </div>
-      </Card>
-
-      {/* Gap Analysis */}
-      <Card>
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-          <AlertCircle size={20} />
-          Gap Analysis & Recommendations
-        </h2>
-
-        {profile?.gapAnalysis && (
           <div className="space-y-4">
-            {/* Missing Skills */}
-            {profile.gapAnalysis.missingSkills.length > 0 && (
-              <div>
-                <h3 className="font-medium text-gray-900 dark:text-white mb-2">Missing Skills</h3>
-                <div className="flex flex-wrap gap-2">
-                  {profile.gapAnalysis.missingSkills.map((skill) => (
-                    <Badge key={skill} variant="error" size="sm">
-                      {skill}
-                    </Badge>
-                  ))}
+            {education.map((edu: any, index: number) => (
+              <div key={index} className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="font-semibold text-gray-900 dark:text-white">
+                    {edu.degree}{edu.field ? ` — ${edu.field}` : ''}
+                  </h3>
+                  <p className="text-primary-600 dark:text-primary-400 text-sm font-medium">{edu.institution || edu.school}</p>
+                  {edu.status && <p className="text-xs text-gray-500 dark:text-gray-500 mt-0.5">{edu.status}</p>}
                 </div>
+                <span className="text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">{edu.period || edu.year}</span>
               </div>
-            )}
-
-            {/* Areas for Improvement */}
-            {profile.gapAnalysis.areasForImprovement.length > 0 && (
-              <div>
-                <h3 className="font-medium text-gray-900 dark:text-white mb-2">Areas for Improvement</h3>
-                <div className="flex flex-wrap gap-2">
-                  {profile.gapAnalysis.areasForImprovement.map((area) => (
-                    <Badge key={area} variant="warning" size="sm">
-                      {area}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Recommendations */}
-            {profile.gapAnalysis.recommendations.length > 0 && (
-              <div>
-                <h3 className="font-medium text-gray-900 dark:text-white mb-2">Recommendations</h3>
-                <ul className="space-y-2">
-                  {profile.gapAnalysis.recommendations.map((rec, i) => (
-                    <li key={i} className="flex gap-2 text-sm text-gray-600 dark:text-gray-400">
-                      <span className="text-primary-600 dark:text-primary-400 flex-shrink-0 mt-0.5">•</span>
-                      <span>{rec}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
+            ))}
           </div>
-        )}
+        </Card>
+      )}
+
+      {/* Military Section */}
+      {military && (
+        <Card>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+            <Shield size={20} className="text-primary-500" />
+            Military Service
+          </h2>
+
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="font-semibold text-gray-900 dark:text-white">{military.role}</h3>
+              <p className="text-primary-600 dark:text-primary-400 text-sm font-medium">{military.unit}</p>
+              {military.description && (
+                <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">{military.description}</p>
+              )}
+            </div>
+            <span className="text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">{military.period}</span>
+          </div>
+        </Card>
+      )}
+
+      {/* Languages Section */}
+      {spokenLanguages.length > 0 && (
+        <Card>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+            <Languages size={20} className="text-primary-500" />
+            Languages
+          </h2>
+          <div className="flex flex-wrap gap-2">
+            {spokenLanguages.map((lang: string) => (
+              <Badge key={lang} variant="primary" size="md">{lang}</Badge>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {/* Update Profile Section */}
+      <Card>
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2" dir="rtl">
+          <Wand2 size={20} className="text-primary-500" />
+          עדכון פרופיל
+        </h2>
+        <p className="text-sm text-gray-600 dark:text-gray-400 mb-3" dir="rtl">
+          הדבק את הרקע המקצועי שלך וה-AI ינתח ויעדכן את הפרופיל
+        </p>
+        <textarea
+          value={rawInput}
+          onChange={(e) => setRawInput(e.target.value)}
+          placeholder="הדבק כאן את קורות החיים או הרקע המקצועי שלך..."
+          className="w-full rounded-xl border border-gray-300 px-4 py-3 dark:border-gray-700 dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+          rows={6}
+          dir="rtl"
+        />
+        <button
+          onClick={handleSubmitKnowledge}
+          disabled={!rawInput.trim() || isProcessing}
+          className="mt-3 rounded-xl bg-gradient-to-r from-primary-500 to-purple-500 px-6 py-2.5 text-white font-medium hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+        >
+          {isProcessing ? (
+            <>
+              <Loader2 className="animate-spin h-4 w-4" />
+              מעבד...
+            </>
+          ) : (
+            <>
+              <Wand2 size={16} />
+              עדכן עם AI
+            </>
+          )}
+        </button>
       </Card>
+
+      {/* Empty state if no structured data at all */}
+      {!hasStructuredData && (
+        <div className="text-center py-8 text-gray-500 dark:text-gray-400" dir="rtl">
+          <p className="text-lg">אין נתונים מובנים עדיין</p>
+          <p className="text-sm mt-1">הדבק את הרקע המקצועי שלך בתיבה למעלה כדי שה-AI ינתח אותו</p>
+        </div>
+      )}
     </div>
   )
 }
