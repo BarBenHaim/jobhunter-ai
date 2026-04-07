@@ -3,7 +3,7 @@ import { ScrapeSource, ScrapeStatus, ScrapeTriggerResult } from '@/types'
 
 export const scrapeApi = {
   async triggerScrape(
-    keywords: string[] = ['React', 'Full Stack', 'Node.js', 'TypeScript', '×¤××ª××', '×××××§'],
+    keywords: string[] = ['React', 'Full Stack', 'Node.js', 'TypeScript', 'פיתוח', 'הייטק'],
     location: string = 'Israel'
   ): Promise<{ success: boolean; message: string; data: ScrapeTriggerResult }> {
     const { data } = await apiClient.post('/scrape/trigger', { keywords, location })

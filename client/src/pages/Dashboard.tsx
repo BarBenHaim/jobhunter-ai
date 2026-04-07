@@ -69,7 +69,7 @@ const Dashboard = () => {
   const scrapeMutation = useMutation({
     mutationFn: () =>
       scrapeApi.triggerScrape(
-        ['React', 'Full Stack', 'Node.js', 'TypeScript', 'Frontend', 'Backend', '×¤××ª××'],
+        ['React', 'Full Stack', 'Node.js', 'TypeScript', 'Frontend', 'Backend', 'מפתח תוכנה', 'פיתוח'],
         'Israel'
       ),
     onSuccess: (res) => {

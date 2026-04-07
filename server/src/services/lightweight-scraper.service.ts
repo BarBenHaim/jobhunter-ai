@@ -315,8 +315,8 @@ class LightweightScraperService {
 
     const results: ScrapeResult[] = [];
 
-    // Use default keywords if none provided
-    const searchTerms = keywords.length > 0 ? keywords : ['software engineer', 'developer'];
+    // Use default keywords if none provided (include Hebrew for Israeli sites)
+    const searchTerms = keywords.length > 0 ? keywords : ['מפתח תוכנה', 'software engineer'];
     const searchLocation = location || 'Israel';
 
     // Run all scrapers in parallel
@@ -387,7 +387,7 @@ class LightweightScraperService {
     keywords: string[] = [],
     location: string = 'Israel'
   ): Promise<ScrapeResult> {
-    const searchTerms = keywords.length > 0 ? keywords : ['software engineer', 'developer'];
+    const searchTerms = keywords.length > 0 ? keywords : ['מפתח תוכנה', 'software engineer'];
     const searchLocation = location || 'Israel';
 
     logger.info(`Scraping source: ${source}`, { searchTerms, searchLocation });

@@ -241,6 +241,43 @@ export class JobService {
     }
   }
 
+  /**
+   * Count total active jobs in the database
+   */
+  async countJobs(): Promise<number> {
+    try {
+      const count = await prisma.job.count({
+        where: { isActive: true },
+      });
+      return count;
+    } catch (error) {
+      logger.error('Error counting jobs:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get job counts grouped by source
+   */
+  async getSourceCounts(): Promise<Record<string, number>> {
+    try {
+      const sources = await prisma.job.groupBy({
+        by: ['source'],
+        _count: { source: true },
+        where: { isActive: true },
+      });
+
+      const counts: Record<string, number> = {};
+      for (const s of sources) {
+        counts[s.source] = s._count.source;
+      }
+      return counts;
+    } catch (error) {
+      logger.error('Error getting source counts:', error);
+      throw error;
+    }
+  }
+
   async triggerScrape(source: string) {
     try {
       logger.info(`Triggering scrape for source: ${source}`);
