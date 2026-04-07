@@ -16,6 +16,7 @@ import {
   FileBadge,
   BookOpen,
   Brain,
+  Sparkles,
 } from 'lucide-react'
 import { useAppStore } from '@/stores/app.store'
 
@@ -28,6 +29,7 @@ const navItems = [
   { label: 'Profile', path: '/profile', icon: User },
   { label: 'CV Generator', path: '/cv-generator', icon: FileBadge },
   { label: 'Intelligence', path: '/intelligence', icon: Brain },
+  { label: 'Discovery', path: '/discovery', icon: Sparkles },
   { label: 'Analytics', path: '/analytics', icon: BarChart3 },
   { label: 'Settings', path: '/settings', icon: Settings },
   { label: 'Guide', path: '/guide', icon: BookOpen },

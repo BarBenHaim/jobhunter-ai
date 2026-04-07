@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express'
 import { lightweightScraperService } from '../services/lightweight-scraper.service'
+import { companyDiscoveryService } from '../services/company-discovery.service'
 import { jobService } from '../services/job.service'
 import logger from '../utils/logger'
 
@@ -167,7 +168,7 @@ router.get('/status', async (_req: Request, res: Response) => {
     const totalJobsInDB = await jobService.countJobs()
     const sourceCounts = await jobService.getSourceCounts()
 
-    const availableSources = ['INDEED', 'DRUSHIM', 'ALLJOBS', 'GOOGLE_JOBS', 'COMPANY_CAREER_PAGE']
+    const availableSources = ['INDEED', 'DRUSHIM', 'ALLJOBS', 'GOOGLE_JOBS', 'COMPANY_CAREER_PAGE', 'TOP_COMPANIES']
 
     // Build databaseStats with shape the frontend expects: { SOURCE: { totalJobs, activeJobs } }
     const databaseStats: Record<string, any> = {}
@@ -248,6 +249,13 @@ router.get('/sources', (_req: Request, res: Response) => {
           name: 'Company Career Pages',
           url: 'https://www.google.com',
           description: 'Company career pages via Google search (Greenhouse, Lever, Ashby)',
+          available: true,
+        },
+        {
+          id: 'TOP_COMPANIES',
+          name: 'Top Israeli Companies',
+          url: '/discovery',
+          description: `Curated list of ${companyDiscoveryService.getTopCompanies().length}+ top Israeli tech companies — scans Greenhouse, Lever, Ashby APIs directly`,
           available: true,
         },
       ],
