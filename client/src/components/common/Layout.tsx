@@ -14,6 +14,7 @@ import {
   Bell,
   Zap,
   FileBadge,
+  BookOpen,
 } from 'lucide-react'
 import { useAppStore } from '@/stores/app.store'
 
@@ -27,6 +28,7 @@ const navItems = [
   { label: 'CV Generator', path: '/cv-generator', icon: FileBadge },
   { label: 'Analytics', path: '/analytics', icon: BarChart3 },
   { label: 'Settings', path: '/settings', icon: Settings },
+  { label: 'Guide', path: '/guide', icon: BookOpen },
 ]
 
 export const Layout = ({ children }: { children: React.ReactNode }) => {
