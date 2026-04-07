@@ -298,60 +298,65 @@ class LightweightScraperService {
         try {
           const $elem = $(elem);
 
-          // Title from .job-content-top-title-highlight
-          let title = $elem.find('.job-content-top-title-highlight').text().trim();
-          // Remove "Alljobs Match" suffix if present
+          // Title and Company are inside .job-content-top-title-highlight
+          // Structure: <div class="job-content-top-title-highlight">
+          //   <div>Job Title Text</div>        ← title (first child div)
+          //   <div class="T14">Company Name</div>  ← company (second child div with class T14)
+          // </div>
+          const titleHighlight = $elem.find('.job-content-top-title-highlight');
+          if (!titleHighlight.length) return;
+
+          // First child div = title, child with class T14 = company
+          const titleDiv = titleHighlight.children('div').first();
+          const companyDiv = titleHighlight.find('.T14');
+
+          let title = titleDiv.text().trim();
+          // Remove "Alljobs Match" suffix if it somehow appears
           title = title.replace(/Alljobs\s*Match/i, '').trim();
           if (!title) return;
 
-          // Company: look for anchor links - skip "save" button, get company link
-          const anchors = $elem.find('a');
-          let company = '';
-          anchors.each((_idx: number, aElem: any) => {
-            const text = $(aElem).text().trim();
-            // Skip empty, save buttons, "Alljobs Match", "עוד..."
-            if (text && !text.includes('בדף המשרות') && !text.includes('Alljobs') && !text.includes('עוד') && text.length > 1) {
-              if (!company) {
-                company = text;
-              }
-            }
-          });
+          const company = companyDiv.text().trim();
+          if (!company) return;
 
           // Location from .job-content-top-location
           let jobLocation = $elem.find('.job-content-top-location').text().trim();
-          // Clean up "מיקום המשרה:" prefix
-          jobLocation = jobLocation.replace(/מיקום המשרה:\s*/i, '').trim() || location;
+          // Clean up "מיקום המשרה:" prefix and "מספר מקומות" prefix
+          jobLocation = jobLocation
+            .replace(/מיקום המשרה:\s*/i, '')
+            .replace(/מספר מקומות\s*/i, '')
+            .trim() || location;
+          // Take just the first city if multiple are listed (no separators between them)
+          // Cities are concatenated without separators, take reasonable length
+          if (jobLocation.length > 30) {
+            jobLocation = jobLocation.substring(0, 30).trim();
+          }
 
           // Description from .job-content-top-desc
           const description = $elem.find('.job-content-top-desc').text().trim();
-
-          // Job type from .job-content-top-type
-          let jobType = $elem.find('.job-content-top-type').text().trim();
-          jobType = jobType.replace(/סוג משרה:\s*/i, '').trim();
 
           // Date from .job-content-top-date
           const dateStr = $elem.find('.job-content-top-date').text().trim();
           const postedAt = this.parseAllJobsDate(dateStr);
 
-          // Try to find the job link
-          const jobLink = $elem.find('a[href*="/Job/"]').first().attr('href') ||
-                          $elem.find('a.N').last().attr('href');
-          const sourceUrl = jobLink
-            ? (jobLink.startsWith('http') ? jobLink : `https://www.alljobs.co.il${jobLink}`)
-            : '';
-
-          if (title && company) {
-            jobs.push({
-              title,
-              company,
-              location: jobLocation,
-              locationType: 'hybrid',
-              description,
-              sourceUrl,
-              source: 'ALLJOBS',
-              postedAt,
-            });
+          // Job link: the anchor with class "N" that contains the title text is the job link
+          // But many AllJobs links use javascript:void(0) — use the "more info" link at bottom instead
+          let sourceUrl = '';
+          const moreInfoLink = $elem.find('a[href*="/Info/"]').first().attr('href') ||
+                               $elem.find('a[href*="/Job/"]').first().attr('href');
+          if (moreInfoLink && !moreInfoLink.includes('javascript')) {
+            sourceUrl = moreInfoLink.startsWith('http') ? moreInfoLink : `https://www.alljobs.co.il${moreInfoLink}`;
           }
+
+          jobs.push({
+            title,
+            company,
+            location: jobLocation,
+            locationType: 'hybrid',
+            description,
+            sourceUrl,
+            source: 'ALLJOBS',
+            postedAt,
+          });
         } catch (err) {
           logger.warn('Error parsing AllJobs item', { error: err });
         }
