@@ -44,10 +44,16 @@ export interface ScoreResult {
   cultureFit: number;
   salaryMatch: number;
   acceptanceProb: number;
-  reasoning?: string;
+  careerGrowth: number;
+  isExceptional: boolean;
+  exceptionalReason: string | null;
   matchedSkills: string[];
   missingSkills: string[];
   redFlags: string[];
+  greenFlags: string[];
+  reasoning: string;
+  careerAdvice: string;
+  cvTailoringTips: string[];
   bestPersona?: string;
 }
 
@@ -357,8 +363,17 @@ Format: ["Gap 1: description", "Gap 2: description", ...]`;
         throw new AIError('AI service not initialized');
       }
 
-      const systemPrompt = `You are an expert job-candidate fit analyst.
-Evaluate how well a job matches a professional persona based on skills, experience, and career goals.
+      const systemPrompt = `You are an expert career advisor and job-candidate fit analyst.
+Evaluate how well a job matches a professional persona considering:
+1. **Career Growth Potential** - Is this a step up? Does it advance their trajectory?
+2. **Exceptional Opportunity Detection** - Flag outstanding jobs (top-tier companies, unique roles, above-market salary, learning opportunities)
+3. **CV-Job Match Quality** - How well does the candidate's actual experience match what's needed?
+4. **Hidden Gems** - Jobs that may not perfectly match keywords but offer great growth
+5. **Full Career Trajectory** - Consider their entire career arc, not just keyword matching
+6. **Stretch Opportunities** - Jobs 10-20% above current level are growth opportunities
+
+Top-tier companies: Google, Microsoft, Meta, Amazon, Apple, Netflix, OpenAI, Anthropic, Stripe, Figma, etc.
+
 Return a JSON object with:
 {
   "overallScore": 0-100,
@@ -367,10 +382,16 @@ Return a JSON object with:
   "cultureFit": 0-100,
   "salaryMatch": 0-100,
   "acceptanceProb": 0-1,
+  "careerGrowth": 0-100,
+  "isExceptional": true/false,
+  "exceptionalReason": "string or null",
   "matchedSkills": ["skill1", "skill2"],
   "missingSkills": ["skill1", "skill2"],
   "redFlags": ["concern1", "concern2"],
-  "reasoning": "2-3 sentence explanation"
+  "greenFlags": ["positive1", "positive2"],
+  "reasoning": "3-4 sentence detailed analysis",
+  "careerAdvice": "1-2 sentences about how this job fits career trajectory",
+  "cvTailoringTips": ["tip1", "tip2", "tip3"]
 }`;
 
       const profileStr = profile
@@ -392,7 +413,14 @@ Requirements: ${job.requirements || 'Not specified'}
 Salary: ${job.salary ? JSON.stringify(job.salary) : 'Not specified'}
 Experience Level: ${job.experienceLevel || 'Not specified'}
 
-Provide a detailed fit analysis.`;
+Think deeply about:
+- Does this advance their career? Is it a stretch (good) or too easy/repetitive?
+- Is the company top-tier? Does it have strong learning opportunities?
+- Will this job fill skill gaps the candidate has?
+- What specific CV bullets would make them stand out for THIS job?
+- Are there hidden reasons this might be exceptional despite not perfectly matching keywords?
+
+Provide a detailed fit analysis with career growth potential.`;
 
       const response = await this.callAPI(systemPrompt, userPrompt);
       return this.parseJSON<ScoreResult>(response);
@@ -440,11 +468,19 @@ Provide a detailed fit analysis.`;
         throw new AIError('AI service not initialized');
       }
 
-      const systemPrompt = `You are an expert CV writer specializing in ATS-optimized documents.
-Given a job description, persona, and candidate profile, generate tailored CV content.
+      const systemPrompt = `You are an expert CV writer and career strategist specializing in ATS-optimized, job-specific tailoring.
+Given a job description, persona, and candidate profile, generate deeply tailored CV content.
+
+Your approach:
+1. **Deeply analyze the job** - Extract what they REALLY want (explicit and implicit)
+2. **Rewrite experience bullets** - Match the job language, emphasize relevant achievements
+3. **Determine job type** - More technical for engineering, more leadership for management, etc.
+4. **Add tailored highlights** - Create 3-5 bullet points that directly address job requirements
+5. **Estimate ATS pass rate** - Include a matchPercentage field (0-100)
+
 Return a JSON object with:
 {
-  "summary": "2-3 sentence professional summary tailored to this role",
+  "summary": "2-3 sentence professional summary tailored to this role and company",
   "skills": ["Skill 1", "Skill 2", ...] (up to 15, prioritized by job relevance),
   "keywordInjections": ["keyword1", "keyword2", ...] (from job description),
   "selectedExperiences": [
@@ -452,7 +488,7 @@ Return a JSON object with:
       "title": "Job Title",
       "company": "Company",
       "duration": "X-Y",
-      "description": "2-3 sentences highlighting relevant achievements"
+      "description": "2-3 sentences highlighting relevant achievements, using job-matching language"
     }
   ],
   "selectedEducation": [
@@ -467,27 +503,43 @@ Return a JSON object with:
       "name": "Project Name",
       "description": "Tailored description emphasizing relevant aspects"
     }
-  ]
+  ],
+  "tailoredHighlights": ["highlight1", "highlight2", "highlight3", "highlight4", "highlight5"],
+  "matchPercentage": 0-100
 }
+
 Rules:
-- Inject 10-15 keywords from the job description naturally
-- Tailor experience descriptions to highlight matching achievements
+- Inject 10-15 keywords from the job description naturally into skills and descriptions
+- Rewrite experience descriptions to match job language (technical vs leadership vs product vs growth)
+- Select experiences that most directly match job requirements
 - Remove irrelevant experiences
-- Ensure ATS-friendly formatting (no special characters except standard punctuation)`;
+- Ensure ATS-friendly formatting (no special characters except standard punctuation)
+- tailoredHighlights should be specific to THIS job, not generic
+- matchPercentage reflects likelihood of passing ATS screening`;
 
       const profileStr = profile
         ? `\nCandidate Profile:\n${JSON.stringify(profile, null, 2)}`
         : '';
 
-      const userPrompt = `Generate tailored CV content for:
+      const userPrompt = `Generate deeply tailored CV content for:
 Persona: ${persona.name} (${persona.title})
 ${profileStr}
 
 Job Details:
 Title: ${job.title}
 Company: ${job.company}
+Location: ${job.location || 'Not specified'}
 Description: ${job.description}
-Requirements: ${job.requirements || 'Not specified'}`;
+Requirements: ${job.requirements || 'Not specified'}
+
+Think deeply about:
+- What does this company/role REALLY want (read between the lines)?
+- What is the job type (engineering, product, leadership, growth, data)?
+- Which of the candidate's experiences are most relevant?
+- What keywords appear in the job description that should be naturally woven in?
+- What 3-5 bullet points would make the candidate stand out for THIS specific role?
+
+Generate the CV content with heavy focus on THIS specific job match.`;
 
       const response = await this.callAPI(systemPrompt, userPrompt);
       return this.parseJSON<any>(response);

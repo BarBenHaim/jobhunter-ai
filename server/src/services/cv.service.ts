@@ -52,8 +52,7 @@ export class CVService {
           title: persona.title,
           targetKeywords: persona.targetKeywords,
         },
-        userProfile.structuredProfile as any,
-        jobScore?.overallScore || 0
+        userProfile.structuredProfile as any
       );
 
       if (!cvContent) {
@@ -145,49 +144,52 @@ export class CVService {
     }
   }
 
-  async previewCV(jobId: string, personaId: string) {
+  async previewCV(applicationId: string, content?: any) {
     try {
-      logger.info(`Previewing CV for job: ${jobId}, persona: ${personaId}`);
+      logger.info(`Previewing CV for application: ${applicationId}`);
 
-      // Generate without saving to database
-      const job = await prisma.job.findUnique({ where: { id: jobId } });
-      const persona = await prisma.persona.findUnique({ where: { id: personaId } });
-      const userProfile = await prisma.userProfile.findUnique({
-        where: { id: persona?.userId || '' },
+      // Get application, job, persona, and profile data
+      const application = await prisma.application.findUnique({
+        where: { id: applicationId },
+        include: { job: true, persona: true },
       });
 
-      if (!job || !persona || !userProfile) {
-        throw new NotFoundError('Job, persona, or user profile not found');
+      if (!application) {
+        throw new NotFoundError('Application not found');
       }
 
-      const jobScore = await prisma.jobScore.findUnique({
-        where: {
-          jobId_personaId: { jobId, personaId },
-        },
+      const userProfile = await prisma.userProfile.findUnique({
+        where: { id: application.persona.userId || '' },
       });
 
-      const cvContent = await aiClient.generateCVContent(
-        {
-          id: job.id,
-          title: job.title,
-          company: job.company,
-          description: job.description,
-          requirements: job.requirements,
-        } as any,
-        {
-          name: persona.name,
-          title: persona.title,
-          targetKeywords: persona.targetKeywords,
-        },
-        userProfile.structuredProfile as any,
-        jobScore?.overallScore || 0
-      );
+      if (!userProfile) {
+        throw new NotFoundError('User profile not found');
+      }
 
-      logger.info(`CV previewed for job: ${jobId}, persona: ${personaId}`);
+      // Use provided content or generate new CV content
+      let cvContent = content;
+      if (!cvContent) {
+        cvContent = await aiClient.generateCVContent(
+          {
+            id: application.job.id,
+            title: application.job.title,
+            company: application.job.company,
+            description: application.job.description,
+            requirements: application.job.requirements,
+          } as any,
+          {
+            name: application.persona.name,
+            title: application.persona.title,
+            targetKeywords: application.persona.targetKeywords,
+          },
+          userProfile.structuredProfile as any
+        );
+      }
+
+      logger.info(`CV previewed for application: ${applicationId}`);
 
       return {
-        jobId,
-        personaId,
+        applicationId,
         cvContent,
         preview: true,
         previewedAt: new Date().toISOString(),
@@ -329,8 +331,13 @@ export class CVService {
   /**
    * Generate a standalone ATS-optimized CV without a job application
    */
-  async generateStandaloneCV(userId: string, format: string = 'pdf', variant: string = 'general', targetRole?: string) {
+  async generateStandaloneCV(userId: string | undefined, format: string = 'pdf', variant: string = 'general', targetRole?: string) {
     try {
+      // Validate userId
+      if (!userId) {
+        throw new ValidationError('User ID is required');
+      }
+
       logger.info(`Generating standalone CV`, { userId, format, variant, targetRole });
 
       // Ensure output directory exists
@@ -401,30 +408,43 @@ export class CVService {
       logger.info(`Generating ATS CV versions`, { userId });
 
       const variants = ['general', 'frontend', 'backend', 'fullstack', 'data', 'ai'];
-      const results: Record<string, any> = {};
+      const versionResults: any[] = [];
 
       for (const variant of variants) {
         try {
-          const cvResult = await this.generateStandaloneCV(userId, 'pdf', variant);
-          results[variant] = {
+          // Generate both PDF and DOCX versions
+          const pdfResult = await this.generateStandaloneCV(userId, 'pdf', variant);
+          const docxResult = await this.generateStandaloneCV(userId, 'docx', variant);
+
+          versionResults.push({
+            variant,
             success: true,
-            filePath: cvResult.filePath,
-            atsScore: cvResult.atsValidation.score,
-          };
+            pdfPath: pdfResult.filePath,
+            docxPath: docxResult.filePath,
+            atsScore: pdfResult.atsValidation.score,
+          });
+
+          logger.info(`Generated ${variant} CV variant`, {
+            userId,
+            pdfPath: pdfResult.filePath,
+            docxPath: docxResult.filePath,
+            atsScore: pdfResult.atsValidation.score,
+          });
         } catch (error: any) {
           logger.warn(`Failed to generate ${variant} variant:`, error);
-          results[variant] = {
+          versionResults.push({
+            variant,
             success: false,
             error: error.message,
-          };
+          });
         }
       }
 
-      logger.info(`Generated ${Object.values(results).filter((r: any) => r.success).length} CV variants`, { userId });
+      const successCount = versionResults.filter((r: any) => r.success).length;
+      logger.info(`Generated ${successCount}/${variants.length} CV variants`, { userId });
 
       return {
-        userId,
-        variants: results,
+        versions: versionResults,
         generatedAt: new Date().toISOString(),
       };
     } catch (error) {
@@ -464,8 +484,7 @@ export class CVService {
         title: role,
         targetKeywords: this.getVariantKeywords(variant),
       },
-      profile,
-      85
+      profile
     );
     return cvContent;
   }
@@ -476,11 +495,29 @@ export class CVService {
   private generateTemplateCV(userProfile: any, variant: string): any {
     const profile = userProfile.structuredProfile || {};
 
-    // Filter skills by variant
-    const skills = this.getVariantSkills(variant, profile.skills || {});
+    // Get variant-specific skills and flatten to array of strings
+    const skillsMap = this.getVariantSkills(variant, profile.skills || {});
+    const skills: string[] = [];
 
-    // Filter experience by variant
-    const experiences = this.filterExperienceByVariant(variant, profile.experience || []);
+    // Flatten skills map to array of strings
+    if (typeof skillsMap === 'object' && !Array.isArray(skillsMap)) {
+      for (const category in skillsMap) {
+        if (Array.isArray(skillsMap[category])) {
+          skills.push(...skillsMap[category]);
+        }
+      }
+    } else if (Array.isArray(skillsMap)) {
+      skills.push(...skillsMap);
+    }
+
+    // Filter experience by variant and ensure proper structure
+    const rawExperiences = profile.experience || [];
+    const experiences = this.filterExperienceByVariant(variant, rawExperiences).map((exp: any) => ({
+      title: exp.title || 'Position',
+      company: exp.company || 'Company',
+      duration: exp.duration || exp.years || 'N/A',
+      description: exp.description || exp.highlights?.join('. ') || 'Contributed to team projects',
+    }));
 
     const variantTitles: Record<string, string> = {
       frontend: 'Frontend Developer',
@@ -491,17 +528,24 @@ export class CVService {
       general: userProfile.fullName || 'Professional',
     };
 
+    // Ensure education has proper structure
+    const education = (profile.education || []).map((edu: any) => ({
+      degree: edu.degree || 'Degree',
+      field: edu.field || 'Field of Study',
+      school: edu.school || 'Institution',
+    }));
+
     return {
-      name: userProfile.fullName,
-      title: variantTitles[variant] || userProfile.fullName,
-      email: userProfile.email,
-      phone: userProfile.phone,
-      location: userProfile.location,
-      summary: profile.summary || `Experienced ${variantTitles[variant].toLowerCase()} with proven expertise`,
-      skills,
-      experiences,
-      education: profile.education || [],
-      projects: profile.projects?.slice(0, 3) || [],
+      name: userProfile.fullName || 'Professional',
+      title: variantTitles[variant] || userProfile.fullName || 'Professional',
+      email: userProfile.email || '',
+      phone: userProfile.phone || '',
+      location: userProfile.location || '',
+      summary: profile.summary || `Experienced ${variantTitles[variant].toLowerCase()} with proven expertise in delivering high-quality solutions`,
+      skills: skills.slice(0, 15), // Limit to top 15 skills
+      experiences: experiences.slice(0, 4), // Limit to top 4 experiences
+      education: education,
+      projects: (profile.projects || []).slice(0, 3),
       certifications: profile.certifications || [],
     };
   }

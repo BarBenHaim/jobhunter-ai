@@ -329,4 +329,49 @@ router.post(
   })
 );
 
+// GET /api/cv/download - Download a generated CV file
+router.get(
+  '/download',
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const filePath = req.query.path as string;
+
+    if (!filePath) {
+      res.status(400).json({ success: false, error: 'File path is required' });
+      return;
+    }
+
+    // Security: ensure path is within our storage directory
+    const path = require('path');
+    const normalizedPath = path.resolve(filePath);
+    const storageDir = path.resolve(process.cwd(), 'storage');
+
+    if (!normalizedPath.startsWith(storageDir)) {
+      res.status(403).json({ success: false, error: 'Access denied' });
+      return;
+    }
+
+    try {
+      await fs.access(normalizedPath);
+    } catch {
+      res.status(404).json({ success: false, error: 'File not found' });
+      return;
+    }
+
+    const ext = path.extname(normalizedPath).toLowerCase();
+    const mimeTypes: Record<string, string> = {
+      '.pdf': 'application/pdf',
+      '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    };
+
+    const contentType = mimeTypes[ext] || 'application/octet-stream';
+    const fileName = path.basename(normalizedPath);
+
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+
+    const fileBuffer = await fs.readFile(normalizedPath);
+    res.send(fileBuffer);
+  })
+);
+
 export default router;
