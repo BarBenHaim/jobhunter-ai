@@ -108,6 +108,7 @@ const SOURCE_MAP: Record<string, string> = {
   alljobs: 'ALLJOBS',
   google: 'GOOGLE_JOBS',
   careers: 'COMPANY_CAREER_PAGE',
+  topcompanies: 'TOP_COMPANIES',
 }
 
 // POST /api/scrape/single - Scrape a single source
