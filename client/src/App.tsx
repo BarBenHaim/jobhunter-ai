@@ -24,6 +24,7 @@ import Analytics from '@/pages/Analytics'
 import Settings from '@/pages/Settings'
 import CVGenerator from '@/pages/CVGenerator'
 import Guide from '@/pages/Guide'
+import Intelligence from '@/pages/Intelligence'
 
 // Auth Screen Component
 function AuthScreen() {
@@ -268,6 +269,7 @@ export default function App() {
         <Route path="/settings" element={<Settings />} />
         <Route path="/cv-generator" element={<CVGenerator />} />
         <Route path="/guide" element={<Guide />} />
+        <Route path="/intelligence" element={<Intelligence />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
 

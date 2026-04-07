@@ -3,6 +3,7 @@ import { body, param, query, validationResult } from 'express-validator';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
 import { applicationService } from '../services/application.service';
+import { intelligenceService } from '../services/intelligence.service';
 import { cvGenerationQueue, emailQueue } from '../queue';
 import prisma from '../db/prisma';
 import logger from '../utils/logger';
@@ -263,18 +264,32 @@ router.patch(
       return;
     }
 
-    const application = await prisma.application.update({
-      where: { id: req.params.id },
-      data: {
-        status: req.body.status as any,
-        notes: req.body.notes,
-      },
-    });
-
-    res.status(200).json({
-      success: true,
-      data: application,
-    });
+    // Use intelligence service to record response and trigger learning
+    const responseStatuses = ['RESPONDED', 'INTERVIEW', 'OFFER', 'REJECTED'];
+    if (responseStatuses.includes(req.body.status)) {
+      const application = await intelligenceService.recordResponse(
+        req.params.id,
+        req.body.status,
+        undefined,
+        req.body.notes
+      );
+      res.status(200).json({
+        success: true,
+        data: application,
+      });
+    } else {
+      const application = await prisma.application.update({
+        where: { id: req.params.id },
+        data: {
+          status: req.body.status as any,
+          notes: req.body.notes,
+        },
+      });
+      res.status(200).json({
+        success: true,
+        data: application,
+      });
+    }
   })
 );
 

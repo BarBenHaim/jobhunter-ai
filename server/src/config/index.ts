@@ -61,6 +61,9 @@ export const config = {
     cvGenerationEnabled: process.env.AI_CV_GENERATION_ENABLED === 'true',
     interviewPrepEnabled: process.env.AI_INTERVIEW_PREP_ENABLED === 'true',
   },
+  serpapi: {
+    apiKey: process.env.SERPAPI_KEY || '',
+  },
   playwright: {
     headless: process.env.PLAYWRIGHT_HEADLESS !== 'false',
     timeout: parseInt(process.env.PLAYWRIGHT_TIMEOUT || '30000', 10),

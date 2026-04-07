@@ -106,7 +106,7 @@ export class AIClient {
   /**
    * Call Claude API with retry logic and rate limiting
    */
-  private async callAPI(
+  async callAPI(
     systemPrompt: string,
     userPrompt: string,
     maxRetries = 3,
@@ -182,7 +182,7 @@ export class AIClient {
   /**
    * Parse JSON response from Claude API
    */
-  private parseJSON<T>(text: string): T {
+  parseJSON<T>(text: string): T {
     try {
       // Extract JSON from markdown code blocks if present
       const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);

@@ -25,6 +25,7 @@ import interviewPrepRoutes from './routes/interview-prep.routes';
 import followUpsRoutes from './routes/follow-ups.routes';
 import settingsRoutes from './routes/settings.routes';
 import scrapeRoutes from './routes/scrape.routes';
+import intelligenceRoutes from './routes/intelligence.routes';
 
 dotenv.config();
 
@@ -371,6 +372,7 @@ app.use('/api/interview-prep', interviewPrepRoutes);
 app.use('/api/follow-ups', followUpsRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/scrape', scrapeRoutes);
+app.use('/api/intelligence', intelligenceRoutes);
 
 app.use((req: Request, res: Response) => {
   res.status(404).json({

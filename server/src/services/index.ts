@@ -13,6 +13,7 @@ export { FollowUpService, followUpService } from './followup.service';
 export { InterviewService, interviewService } from './interview.service';
 export { AnalyticsService, analyticsService } from './analytics.service';
 export { SettingsService, settingsService } from './settings.service';
+export { IntelligenceService, intelligenceService } from './intelligence.service';
 
 // Export base classes for custom services
 export { BaseService, CRUDService } from './base.service';
