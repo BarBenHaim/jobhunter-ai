@@ -96,25 +96,203 @@ app.get('/health', (req: Request, res: Response) => {
   });
 });
 
+// Bar Ben Haim's real CV data
+const BAR_CV_STRUCTURED_PROFILE = {
+  personalInfo: {
+    fullName: 'Bar Ben Haim',
+    title: 'Full Stack Developer & Information Systems Engineer',
+    email: 'barbenbh@gmail.com',
+    phone: '052-661-8184',
+    location: 'Israel',
+    linkedin: 'https://linkedin.com/in/barbenhaim',
+    github: 'https://github.com/barbenhaim',
+  },
+  summary: 'Full-Stack Developer and Information Systems Engineer currently leading the development of a live SaaS platform. Experienced across the full product lifecycle, from database architecture to AI integrations, with a track record of delivering measurable business impact across startups and enterprise environments.',
+  education: [
+    {
+      institution: 'Ono Academic College',
+      degree: 'BSc Computer Science',
+      period: '2025–2028',
+      status: 'In Progress',
+    },
+    {
+      institution: 'Coding Academy',
+      degree: 'Full Stack Bootcamp (640 Hours)',
+      period: 'Completed',
+      status: 'Graduated with Excellence',
+    },
+  ],
+  experience: [
+    {
+      title: 'Full Stack Developer & Founder',
+      company: 'Wedding Tales',
+      period: '2025–Present',
+      highlights: [
+        'Designed and launched a live SaaS platform using Next.js 14, React, and Firebase, serving real clients in the event industry from day one.',
+        'Architected a real-time Firestore database for concurrent multi-user uploads; automated deployments via Vercel CI/CD with sub-10-minute release cycles.',
+        'Integrated AI models to power intelligent features within the platform, applying hands-on experience with AI APIs and prompt-driven workflows.',
+      ],
+    },
+    {
+      title: 'Information Systems Manager & Developer',
+      company: 'Nisha Group',
+      period: '2024–2025',
+      highlights: [
+        'Managed all company technology systems and software, owning vendor relationships and a yearly budget exceeding 1,000,000 NIS.',
+        'Served as Technical PM, shipping features that drove a 20% increase in user engagement; integrated CRM and SAP ERP via bi-directional API pipelines.',
+        'Built PHP/JS internal tools automating core organizational workflows and reducing manual processing time significantly.',
+        'Supported 100+ users through training sessions and technical consulting.',
+      ],
+    },
+    {
+      title: 'Data Analyst',
+      company: 'Nisha Group',
+      period: '2023–2024',
+      highlights: [
+        'Wrote and optimized complex SQL queries on a 500,000+ record MySQL database.',
+        'Built and maintained BI dashboards using Qlik BI Suite (QlikSense, QlikView, NPrinting).',
+        'Led QA processes for a successful new website launch.',
+      ],
+    },
+    {
+      title: 'Freelance Web Developer',
+      company: 'O&B Websites',
+      period: '2023–2025',
+      highlights: [
+        'Delivered custom React and WordPress apps for business clients, handling API integrations and performance from brief to launch.',
+      ],
+    },
+  ],
+  projects: [
+    {
+      name: 'Monday.com Clone with AI Engine',
+      description: 'Built a full-featured project management app using React, Node.js, and MongoDB, with an integrated AI engine that generates board data and automates task creation.',
+    },
+    {
+      name: 'JobHunter AI',
+      description: 'AI-powered job search and application platform with real-time scraping, intelligent scoring, and automated CV generation.',
+    },
+  ],
+  military: {
+    role: 'Psychotechnical Commander & Diagnostician',
+    unit: 'IDF',
+    period: '2020–2022',
+    description: 'Commanded a 60-soldier unit; previously conducted psychotechnical assessments for elite unit selection including 8200 and 81.',
+  },
+  skills: {
+    languages: ['TypeScript', 'JavaScript', 'Python', 'HTML', 'CSS', 'SCSS'],
+    frontend: ['React', 'Next.js 14', 'Tailwind CSS', 'Redux'],
+    backend: ['Node.js', 'PHP', 'REST APIs', 'Express'],
+    databases: ['MySQL', 'Firestore', 'MongoDB', 'PostgreSQL', 'Firebase'],
+    bi: ['Qlik BI Suite', 'QlikSense', 'QlikView', 'NPrinting'],
+    tools: ['Git', 'Vercel', 'CI/CD', 'Docker'],
+    ai: ['AI API Integration', 'Prompt Engineering', 'Anthropic Claude'],
+  },
+  spokenLanguages: ['Hebrew (Native)', 'English (Fluent)'],
+  processedAt: new Date().toISOString(),
+  version: 1,
+};
+
+const BAR_CV_RAW_KNOWLEDGE = {
+  lastSubmitted: new Date().toISOString(),
+  content: `BAR BEN HAIM - Full Stack Developer & Information Systems Engineer · BSc Computer Science
+052-661-8184 · barbenbh@gmail.com · linkedin.com/in/barbenhaim · github.com/barbenhaim
+
+Full-Stack Developer and Information Systems Engineer currently leading the development of a live SaaS platform. Experienced across the full product lifecycle, from database architecture to AI integrations, with a track record of delivering measurable business impact across startups and enterprise environments.
+
+Work Experience:
+- Full Stack Developer & Founder | Wedding Tales (2025–Present): Designed and launched a live SaaS platform using Next.js 14, React, and Firebase. Architected real-time Firestore database. Integrated AI models.
+- Information Systems Manager & Developer | Nisha Group (2024–2025): Managed all technology systems, 1M+ NIS budget. Technical PM, 20% user engagement increase. CRM and SAP ERP integration.
+- Data Analyst | Nisha Group (2023–2024): SQL optimization on 500K+ records. Qlik BI dashboards. QA for website launch.
+- Freelance Web Developer | O&B Websites (2023–2025): Custom React and WordPress apps.
+
+Education: BSc Computer Science at Ono Academic College (2025–2028). Full Stack Bootcamp (640h) at Coding Academy - Graduated with Excellence.
+
+Military: Psychotechnical Commander & Diagnostician | IDF (2020–2022). Commanded 60-soldier unit. Elite unit selection assessments (8200, 81).
+
+Skills: TypeScript, JavaScript, Python, React, Next.js, Node.js, PHP, MySQL, MongoDB, Firestore, Firebase, Qlik BI Suite, Git, Vercel, AI integrations.`,
+  contentLength: 1200,
+};
+
 // Demo login — finds or creates the single user profile, returns a real JWT
 app.post('/api/auth/demo-login', authLimiter, asyncHandler(async (req: Request, res: Response) => {
   let profile = await prisma.userProfile.findFirst();
   if (!profile) {
     profile = await prisma.userProfile.create({
       data: {
-        fullName: 'Job Hunter',
-        email: 'user@jobhunter.ai',
+        fullName: 'Bar Ben Haim',
+        email: 'barbenbh@gmail.com',
+        phone: '052-661-8184',
         location: 'Israel',
-        structuredProfile: {},
-        rawKnowledge: {},
-        preferences: {},
+        linkedinUrl: 'https://linkedin.com/in/barbenhaim',
+        githubUrl: 'https://github.com/barbenhaim',
+        structuredProfile: BAR_CV_STRUCTURED_PROFILE,
+        rawKnowledge: BAR_CV_RAW_KNOWLEDGE,
+        preferences: {
+          jobTypes: ['Full Stack Developer', 'Frontend Developer', 'Backend Developer', 'Software Engineer'],
+          locations: ['Israel', 'Tel Aviv', 'Remote'],
+          experience: 'mid',
+          sources: ['DRUSHIM', 'ALLJOBS'],
+        },
       },
     });
-    logger.info('Created default user profile', { id: profile.id });
+    logger.info('Created Bar Ben Haim profile from CV', { id: profile.id });
+  } else if (!profile.structuredProfile || Object.keys(profile.structuredProfile as any).length === 0) {
+    // Update existing profile with real CV data if structured profile is empty
+    profile = await prisma.userProfile.update({
+      where: { id: profile.id },
+      data: {
+        fullName: 'Bar Ben Haim',
+        email: 'barbenbh@gmail.com',
+        phone: '052-661-8184',
+        location: 'Israel',
+        linkedinUrl: 'https://linkedin.com/in/barbenhaim',
+        githubUrl: 'https://github.com/barbenhaim',
+        structuredProfile: BAR_CV_STRUCTURED_PROFILE,
+        rawKnowledge: BAR_CV_RAW_KNOWLEDGE,
+        preferences: {
+          jobTypes: ['Full Stack Developer', 'Frontend Developer', 'Backend Developer', 'Software Engineer'],
+          locations: ['Israel', 'Tel Aviv', 'Remote'],
+          experience: 'mid',
+          sources: ['DRUSHIM', 'ALLJOBS'],
+        },
+      },
+    });
+    logger.info('Updated profile with Bar Ben Haim CV data', { id: profile.id });
   }
   const token = generateToken(profile.id);
   logger.info('Demo login', { userId: profile.id });
   res.json({ success: true, token, user: profile });
+}));
+
+// Force-seed CV data into existing profile (one-time migration helper)
+app.post('/api/auth/seed-cv', asyncHandler(async (req: Request, res: Response) => {
+  const profile = await prisma.userProfile.findFirst();
+  if (!profile) {
+    res.status(404).json({ success: false, error: 'No profile found' });
+    return;
+  }
+  const updated = await prisma.userProfile.update({
+    where: { id: profile.id },
+    data: {
+      fullName: 'Bar Ben Haim',
+      email: 'barbenbh@gmail.com',
+      phone: '052-661-8184',
+      location: 'Israel',
+      linkedinUrl: 'https://linkedin.com/in/barbenhaim',
+      githubUrl: 'https://github.com/barbenhaim',
+      structuredProfile: BAR_CV_STRUCTURED_PROFILE,
+      rawKnowledge: BAR_CV_RAW_KNOWLEDGE,
+      preferences: {
+        jobTypes: ['Full Stack Developer', 'Frontend Developer', 'Backend Developer', 'Software Engineer'],
+        locations: ['Israel', 'Tel Aviv', 'Remote'],
+        experience: 'mid',
+        sources: ['DRUSHIM', 'ALLJOBS'],
+      },
+    },
+  });
+  logger.info('Seeded CV data into profile', { id: updated.id });
+  res.json({ success: true, message: 'CV data seeded', user: updated });
 }));
 
 app.post('/api/auth/login', authLimiter, asyncHandler(async (req: Request, res: Response) => {
