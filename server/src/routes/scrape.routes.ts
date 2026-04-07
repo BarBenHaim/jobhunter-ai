@@ -211,14 +211,14 @@ router.get('/sources', (_req: Request, res: Response) => {
           id: 'INDEED',
           name: 'Indeed Israel',
           url: 'https://il.indeed.com',
-          description: 'Job listings from Indeed Israel via HTML scraping',
-          available: true,
+          description: 'Indeed Israel (limited - site requires JavaScript rendering)',
+          available: false,
         },
         {
           id: 'DRUSHIM',
           name: 'Drushim',
           url: 'https://www.drushim.co.il',
-          description: 'Israeli job board via public API',
+          description: 'Israeli job board via HTML scraping (SSR)',
           available: true,
         },
         {

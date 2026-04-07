@@ -46,10 +46,13 @@ class LightweightScraperService {
 
   /**
    * Scrape Indeed Israel for job listings
+   * NOTE: Indeed is heavily JS-rendered and blocks server-side requests.
+   * This scraper is kept for compatibility but will likely return 0 results
+   * without a headless browser. Consider using Google Jobs via SerpAPI instead.
    */
   private async scrapeIndeedIsrael(keywords: string[], location: string): Promise<ScrapedJob[]> {
     try {
-      logger.info('Scraping Indeed Israel', { keywords, location });
+      logger.info('Scraping Indeed Israel (limited - JS-rendered site)', { keywords, location });
 
       const jobs: ScrapedJob[] = [];
       const searchTerms = keywords.join(' ');
@@ -60,48 +63,52 @@ class LightweightScraperService {
       const response = await this.axiosInstance.get(url);
       const $ = cheerio.load(response.data);
 
-      // Parse job cards from Indeed
-      $('.jobsearch-ResultsList li').each((i, elem) => {
+      // Try multiple selector patterns (Indeed changes their HTML frequently)
+      const selectors = [
+        '.jobsearch-ResultsList .job_seen_beacon',
+        '.jobsearch-ResultsList li',
+        '.resultContent',
+        '[data-jk]',
+      ];
+
+      let jobElements: cheerio.Cheerio<any> | null = null;
+      for (const sel of selectors) {
+        const found = $(sel);
+        if (found.length > 0) {
+          jobElements = found;
+          logger.info(`Indeed: Using selector "${sel}", found ${found.length} elements`);
+          break;
+        }
+      }
+
+      if (!jobElements || jobElements.length === 0) {
+        logger.warn('Indeed: No job elements found. Site likely requires JavaScript rendering.');
+        return [];
+      }
+
+      jobElements.each((i: number, elem: any) => {
         try {
           const $elem = $(elem);
 
-          // Extract job title
-          const title = $elem.find('h2 a').text().trim();
+          const title = $elem.find('h2 a, .jobTitle a, [data-jk] a').first().text().trim();
           if (!title) return;
 
-          // Extract company
-          const company = $elem.find('[data-company-name]').text().trim() ||
-                         $elem.find('.company_location span').first().text().trim();
-
-          // Extract location
-          const jobLocation = $elem.find('.job_snippet_location').text().trim() ||
-                            $elem.find('[data-job-location]').text().trim() ||
-                            location;
-
-          // Extract job URL
-          const jobUrl = $elem.find('h2 a').attr('href');
-          const sourceUrl = jobUrl ? `https://il.indeed.com${jobUrl}` : '';
-
-          // Extract posting date
-          const dateStr = $elem.find('.date').text().trim();
-          const postedAt = this.parseIndeedDate(dateStr);
-
-          // Extract job snippet/description
-          const description = $elem.find('.job_snippet').text().trim();
-
-          // Extract external ID from URL
+          const company = $elem.find('[data-testid="company-name"], .companyName, .company_location span').first().text().trim();
+          const jobLocation = $elem.find('[data-testid="text-location"], .companyLocation, .job_snippet_location').first().text().trim() || location;
+          const jobUrl = $elem.find('h2 a, .jobTitle a').first().attr('href');
+          const sourceUrl = jobUrl ? (jobUrl.startsWith('http') ? jobUrl : `https://il.indeed.com${jobUrl}`) : '';
+          const description = $elem.find('.job-snippet, .job_snippet').text().trim();
           const externalId = this.extractIndeedJobId(sourceUrl);
 
-          if (title && company && jobLocation) {
+          if (title && company) {
             jobs.push({
               title,
               company,
               location: jobLocation,
               locationType: 'hybrid',
               description,
-              sourceUrl: sourceUrl || '',
+              sourceUrl,
               source: 'INDEED',
-              postedAt,
               externalId,
             });
           }
@@ -119,56 +126,101 @@ class LightweightScraperService {
   }
 
   /**
-   * Scrape Drushim API
+   * Scrape Drushim via server-side rendered HTML
+   * The /api/jobs/search endpoint only returns filter metadata, NOT job listings.
+   * Actual jobs are rendered in the SSR HTML at /jobs/search/{keyword}/
+   *
+   * HTML structure (verified April 2026):
+   * - Container: .job-item
+   * - Title: .job-url (span)
+   * - Job URL: a[href^="/job/"] → prepend https://www.drushim.co.il
+   * - Company: first anchor with href containing "דרושים-" in .job-details-top
+   * - Details: second .flex in .job-details-top → "Location | Experience | Type | Posted"
+   * - Description: .job-intro
    */
   private async scrapeDrushim(keywords: string[], location: string): Promise<ScrapedJob[]> {
     try {
-      logger.info('Scraping Drushim API', { keywords, location });
+      logger.info('Scraping Drushim (HTML)', { keywords, location });
 
       const jobs: ScrapedJob[] = [];
       const searchTerm = keywords.join(' ');
 
-      // Drushim API endpoint
-      const url = `https://www.drushim.co.il/api/jobs/search?searchterm=${encodeURIComponent(searchTerm)}&area=1`;
+      // Drushim SSR search page
+      const url = `https://www.drushim.co.il/jobs/search/${encodeURIComponent(searchTerm)}/`;
 
-      const response = await this.axiosInstance.get(url);
-      const apiJobs = response.data?.jobs || response.data || [];
+      const response = await this.axiosInstance.get(url, {
+        headers: {
+          'User-Agent': this.USER_AGENT,
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'he-IL,he;q=0.9,en-US;q=0.8,en;q=0.7',
+        },
+      });
 
-      // Handle if response is array directly
-      const jobsList = Array.isArray(apiJobs) ? apiJobs : apiJobs.jobs || [];
+      const $ = cheerio.load(response.data);
+      const jobItems = $('.job-item');
 
-      for (const job of jobsList) {
+      logger.info(`Drushim: Found ${jobItems.length} job-item elements`);
+
+      jobItems.each((i: number, elem: any) => {
         try {
-          const jobLocation = job.area || job.region || location;
-          const title = job.position || job.title;
-          const company = job.company_name || job.company;
+          const $elem = $(elem);
 
-          if (title && company) {
-            const postedAt = job.pubDate ? new Date(job.pubDate) : new Date();
+          // Title from .job-url span
+          const title = $elem.find('.job-url').text().trim();
+          if (!title) return;
 
+          // Job URL from a[href^="/job/"]
+          const jobLink = $elem.find('a[href^="/job/"]').first().attr('href');
+          const sourceUrl = jobLink ? `https://www.drushim.co.il${jobLink}` : '';
+
+          // External ID from job URL (e.g., /job/36603142/561e4de2/ → 36603142)
+          const externalId = jobLink ? jobLink.split('/')[2] : undefined;
+
+          // Company name from company link in .job-details-top
+          const detailsTop = $elem.find('.job-details-top');
+          const companyLink = detailsTop.find('a').first();
+          const company = companyLink.text().trim() || 'Unknown';
+
+          // Details text: "Location | Experience | Type | Posted"
+          // The second .flex div in .job-details-top contains "Location | Exp | Type | Posted"
+          const flexDivs = detailsTop.children('.flex');
+          const detailsText = flexDivs.length > 1
+            ? $(flexDivs[1]).text().replace(/\s+/g, ' ').trim()
+            : detailsTop.text().replace(/\s+/g, ' ').trim();
+
+          // Parse details: split by | separator
+          const detailParts = detailsText.split('|').map((p: string) => p.trim());
+          const jobLocation = detailParts[0] || location;
+
+          // Experience level (e.g., "1-2 שנים")
+          const expMatch = detailsText.match(/(\d+-?\d*\s*שנ[הים]+)/);
+          const experienceLevel = expMatch ? expMatch[1] : undefined;
+
+          // Posted time (e.g., "לפני 1 שעות")
+          const postedMatch = detailsText.match(/לפני\s+(\d+)\s+(דקות|שעות|ימים|שבועות|חודשים)/);
+          const postedAt = postedMatch ? this.parseDrushimDate(postedMatch[1], postedMatch[2]) : undefined;
+
+          // Description from .job-intro
+          const description = $elem.find('.job-intro').text().trim();
+
+          if (title && company && company !== 'Unknown') {
             jobs.push({
               title,
               company,
               location: jobLocation,
-              locationType: job.employment_type?.toLowerCase() === 'full-time' ? 'fulltime' : 'hybrid',
-              description: job.description || job.job_description || '',
-              sourceUrl: job.url || `https://www.drushim.co.il/job/${job.id}`,
+              locationType: 'hybrid',
+              description,
+              sourceUrl,
               source: 'DRUSHIM',
-              salary: job.salary_min || job.salary_max ? {
-                min: job.salary_min,
-                max: job.salary_max,
-                currency: 'ILS',
-                period: 'monthly',
-              } : undefined,
-              experienceLevel: job.experience || job.experience_level,
+              experienceLevel,
               postedAt,
-              externalId: job.id?.toString(),
+              externalId,
             });
           }
         } catch (err) {
           logger.warn('Error parsing Drushim job item', { error: err });
         }
-      }
+      });
 
       logger.info(`Found ${jobs.length} jobs on Drushim`);
       return jobs;
@@ -179,7 +231,45 @@ class LightweightScraperService {
   }
 
   /**
+   * Helper: Parse Drushim Hebrew relative dates
+   */
+  private parseDrushimDate(amount: string, unit: string): Date {
+    const today = new Date();
+    const num = parseInt(amount, 10);
+
+    switch (unit) {
+      case 'דקות':
+        today.setMinutes(today.getMinutes() - num);
+        break;
+      case 'שעות':
+        today.setHours(today.getHours() - num);
+        break;
+      case 'ימים':
+        today.setDate(today.getDate() - num);
+        break;
+      case 'שבועות':
+        today.setDate(today.getDate() - num * 7);
+        break;
+      case 'חודשים':
+        today.setMonth(today.getMonth() - num);
+        break;
+    }
+
+    return today;
+  }
+
+  /**
    * Scrape AllJobs Israel
+   *
+   * HTML structure (verified April 2026):
+   * - Container: .job-box
+   * - Title: .job-content-top-title-highlight (may contain "Alljobs Match" suffix)
+   * - Company: anchor links inside .job-box (second link usually has company name)
+   * - Location: .job-content-top-location (text like "מיקום המשרה: ...")
+   * - Description: .job-content-top-desc
+   * - Type: .job-content-top-type
+   * - Date: .job-content-top-date
+   * - Search URL: /SearchResultsGuest.aspx?page=1&poession={keyword}
    */
   private async scrapeAllJobs(keywords: string[], location: string): Promise<ScrapedJob[]> {
     try {
@@ -188,28 +278,67 @@ class LightweightScraperService {
       const jobs: ScrapedJob[] = [];
       const searchTerm = keywords.join(' ');
 
-      // AllJobs main search page
-      const url = `https://www.alljobs.co.il/SearchJobs/?what=${encodeURIComponent(searchTerm)}&where=${encodeURIComponent(location || 'Israel')}`;
+      // AllJobs guest search page (no login required)
+      const url = `https://www.alljobs.co.il/SearchResultsGuest.aspx?page=1&position=&type=&rid=&city=&poession=${encodeURIComponent(searchTerm)}`;
 
-      const response = await this.axiosInstance.get(url);
+      const response = await this.axiosInstance.get(url, {
+        headers: {
+          'User-Agent': this.USER_AGENT,
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'he-IL,he;q=0.9,en-US;q=0.8,en;q=0.7',
+        },
+      });
+
       const $ = cheerio.load(response.data);
+      const jobBoxes = $('.job-box');
 
-      // Parse job listings from AllJobs
-      $('.job_card, .job-item, [data-job-item], article.job').each((i, elem) => {
+      logger.info(`AllJobs: Found ${jobBoxes.length} job-box elements`);
+
+      jobBoxes.each((i: number, elem: any) => {
         try {
           const $elem = $(elem);
 
-          const title = $elem.find('h2, h3, .job-title, [data-job-title]').text().trim();
+          // Title from .job-content-top-title-highlight
+          let title = $elem.find('.job-content-top-title-highlight').text().trim();
+          // Remove "Alljobs Match" suffix if present
+          title = title.replace(/Alljobs\s*Match/i, '').trim();
           if (!title) return;
 
-          const company = $elem.find('.company, [data-company], .employer').text().trim();
-          const jobLocation = $elem.find('.location, [data-location], .job-location').text().trim() || location;
-          const jobUrl = $elem.find('a.job-link, a[href*="job"], .job-title a').attr('href');
-          const sourceUrl = jobUrl?.startsWith('http')
-            ? jobUrl
-            : `https://www.alljobs.co.il${jobUrl}`;
+          // Company: look for anchor links - skip "save" button, get company link
+          const anchors = $elem.find('a');
+          let company = '';
+          anchors.each((_idx: number, aElem: any) => {
+            const text = $(aElem).text().trim();
+            // Skip empty, save buttons, "Alljobs Match", "עוד..."
+            if (text && !text.includes('בדף המשרות') && !text.includes('Alljobs') && !text.includes('עוד') && text.length > 1) {
+              if (!company) {
+                company = text;
+              }
+            }
+          });
 
-          const description = $elem.find('.description, .summary, [data-description]').text().trim();
+          // Location from .job-content-top-location
+          let jobLocation = $elem.find('.job-content-top-location').text().trim();
+          // Clean up "מיקום המשרה:" prefix
+          jobLocation = jobLocation.replace(/מיקום המשרה:\s*/i, '').trim() || location;
+
+          // Description from .job-content-top-desc
+          const description = $elem.find('.job-content-top-desc').text().trim();
+
+          // Job type from .job-content-top-type
+          let jobType = $elem.find('.job-content-top-type').text().trim();
+          jobType = jobType.replace(/סוג משרה:\s*/i, '').trim();
+
+          // Date from .job-content-top-date
+          const dateStr = $elem.find('.job-content-top-date').text().trim();
+          const postedAt = this.parseAllJobsDate(dateStr);
+
+          // Try to find the job link
+          const jobLink = $elem.find('a[href*="/Job/"]').first().attr('href') ||
+                          $elem.find('a.N').last().attr('href');
+          const sourceUrl = jobLink
+            ? (jobLink.startsWith('http') ? jobLink : `https://www.alljobs.co.il${jobLink}`)
+            : '';
 
           if (title && company) {
             jobs.push({
@@ -218,8 +347,9 @@ class LightweightScraperService {
               location: jobLocation,
               locationType: 'hybrid',
               description,
-              sourceUrl: sourceUrl || '',
+              sourceUrl,
               source: 'ALLJOBS',
+              postedAt,
             });
           }
         } catch (err) {
@@ -233,6 +363,37 @@ class LightweightScraperService {
       logger.error('Error scraping AllJobs', { error });
       return [];
     }
+  }
+
+  /**
+   * Helper: Parse AllJobs Hebrew relative dates (e.g., "לפני 3 דקות", "לפני יום")
+   */
+  private parseAllJobsDate(dateStr: string): Date | undefined {
+    if (!dateStr) return undefined;
+
+    const today = new Date();
+
+    // "לפני X דקות/שעות/ימים"
+    const match = dateStr.match(/לפני\s+(\d+)\s+(דקות|שעות|ימים|שבועות|חודשים)/);
+    if (match) {
+      return this.parseDrushimDate(match[1], match[2]);
+    }
+
+    // "לפני דקה/שעה/יום"
+    if (dateStr.includes('דקה')) {
+      today.setMinutes(today.getMinutes() - 1);
+      return today;
+    }
+    if (dateStr.includes('שעה')) {
+      today.setHours(today.getHours() - 1);
+      return today;
+    }
+    if (dateStr.includes('יום')) {
+      today.setDate(today.getDate() - 1);
+      return today;
+    }
+
+    return undefined;
   }
 
   /**
