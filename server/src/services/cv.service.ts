@@ -326,6 +326,262 @@ export class CVService {
     }
   }
 
+  /**
+   * Generate a standalone ATS-optimized CV without a job application
+   */
+  async generateStandaloneCV(userId: string, format: string = 'pdf', variant: string = 'general', targetRole?: string) {
+    try {
+      logger.info(`Generating standalone CV`, { userId, format, variant, targetRole });
+
+      // Ensure output directory exists
+      await fs.mkdir(this.cvOutputDir, { recursive: true });
+
+      const userProfile = await prisma.userProfile.findUnique({
+        where: { id: userId },
+      });
+
+      if (!userProfile) {
+        throw new NotFoundError('User profile not found');
+      }
+
+      // Generate CV content based on variant
+      let cvContent: any;
+
+      try {
+        // Try to use AI to tailor CV for the variant
+        cvContent = await this.generateAITailoredCV(userProfile, variant, targetRole);
+      } catch (error) {
+        // Fallback to template-based approach if AI fails
+        logger.warn('AI CV generation failed, using template approach', { error });
+        cvContent = this.generateTemplateCV(userProfile, variant);
+      }
+
+      if (!cvContent) {
+        throw new AIError('Failed to generate CV content');
+      }
+
+      // Generate file based on format
+      let filePath: string;
+      if (format === 'docx') {
+        filePath = await this.generateDocxFile(userProfile, cvContent);
+      } else {
+        filePath = await this.generatePdfFile(userProfile, cvContent);
+      }
+
+      // Run ATS validation
+      const atsValidation = await this.atsCheck(cvContent);
+
+      logger.info(`Standalone CV generated`, {
+        userId,
+        format,
+        variant,
+        filePath,
+        atsScore: atsValidation.score,
+      });
+
+      return {
+        userId,
+        format,
+        variant,
+        filePath,
+        atsValidation,
+        generatedAt: new Date().toISOString(),
+      };
+    } catch (error) {
+      logger.error('Error generating standalone CV:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Generate multiple ATS variants of a CV (general, frontend, backend, fullstack, data, ai)
+   */
+  async generateATSVersions(userId: string) {
+    try {
+      logger.info(`Generating ATS CV versions`, { userId });
+
+      const variants = ['general', 'frontend', 'backend', 'fullstack', 'data', 'ai'];
+      const results: Record<string, any> = {};
+
+      for (const variant of variants) {
+        try {
+          const cvResult = await this.generateStandaloneCV(userId, 'pdf', variant);
+          results[variant] = {
+            success: true,
+            filePath: cvResult.filePath,
+            atsScore: cvResult.atsValidation.score,
+          };
+        } catch (error: any) {
+          logger.warn(`Failed to generate ${variant} variant:`, error);
+          results[variant] = {
+            success: false,
+            error: error.message,
+          };
+        }
+      }
+
+      logger.info(`Generated ${Object.values(results).filter((r: any) => r.success).length} CV variants`, { userId });
+
+      return {
+        userId,
+        variants: results,
+        generatedAt: new Date().toISOString(),
+      };
+    } catch (error) {
+      logger.error('Error generating ATS versions:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Generate AI-tailored CV content for a specific variant
+   */
+  private async generateAITailoredCV(userProfile: any, variant: string, targetRole?: string): Promise<any> {
+    const profile = userProfile.structuredProfile || {};
+    const variantPrompts: Record<string, string> = {
+      general: 'Create a well-rounded CV highlighting diverse skills',
+      frontend: 'Create a frontend-focused CV emphasizing React, UI/UX, and frontend technologies',
+      backend: 'Create a backend-focused CV emphasizing APIs, databases, and server architecture',
+      fullstack: 'Create a fullstack CV showing both frontend and backend mastery',
+      data: 'Create a data-focused CV emphasizing SQL, analytics, databases, and data engineering',
+      ai: 'Create an AI/ML-focused CV emphasizing machine learning, AI integrations, and data science',
+    };
+
+    const prompt = variantPrompts[variant] || variantPrompts.general;
+    const role = targetRole || variant;
+
+    // Use aiClient to generate content (will throw if not initialized)
+    const cvContent = await aiClient.generateCVContent(
+      {
+        id: 'standalone',
+        title: role,
+        company: 'Self',
+        description: prompt,
+        requirements: '',
+      } as any,
+      {
+        name: 'CV Variant',
+        title: role,
+        targetKeywords: this.getVariantKeywords(variant),
+      },
+      profile,
+      85
+    );
+    return cvContent;
+  }
+
+  /**
+   * Generate template-based CV content
+   */
+  private generateTemplateCV(userProfile: any, variant: string): any {
+    const profile = userProfile.structuredProfile || {};
+
+    // Filter skills by variant
+    const skills = this.getVariantSkills(variant, profile.skills || {});
+
+    // Filter experience by variant
+    const experiences = this.filterExperienceByVariant(variant, profile.experience || []);
+
+    const variantTitles: Record<string, string> = {
+      frontend: 'Frontend Developer',
+      backend: 'Backend Developer',
+      fullstack: 'Full Stack Developer',
+      data: 'Data Engineer',
+      ai: 'AI Engineer',
+      general: userProfile.fullName || 'Professional',
+    };
+
+    return {
+      name: userProfile.fullName,
+      title: variantTitles[variant] || userProfile.fullName,
+      email: userProfile.email,
+      phone: userProfile.phone,
+      location: userProfile.location,
+      summary: profile.summary || `Experienced ${variantTitles[variant].toLowerCase()} with proven expertise`,
+      skills,
+      experiences,
+      education: profile.education || [],
+      projects: profile.projects?.slice(0, 3) || [],
+      certifications: profile.certifications || [],
+    };
+  }
+
+  /**
+   * Get variant-specific keywords
+   */
+  private getVariantKeywords(variant: string): string[] {
+    const keywords: Record<string, string[]> = {
+      frontend: ['React', 'Vue', 'Angular', 'CSS', 'HTML', 'UI/UX', 'JavaScript', 'TypeScript'],
+      backend: ['Node.js', 'Python', 'Java', 'Go', 'Rust', 'API', 'Database', 'Microservices'],
+      fullstack: ['React', 'Node.js', 'TypeScript', 'MongoDB', 'PostgreSQL', 'AWS', 'Docker'],
+      data: ['SQL', 'Python', 'R', 'Pandas', 'Data Analysis', 'BI', 'ETL', 'Analytics'],
+      ai: ['Machine Learning', 'Python', 'TensorFlow', 'PyTorch', 'NLP', 'LLMs', 'AI APIs'],
+      general: ['Software Engineer', 'Developer', 'Problem Solving', 'Team Player'],
+    };
+    return keywords[variant] || keywords.general;
+  }
+
+  /**
+   * Get variant-specific skills subset
+   */
+  private getVariantSkills(variant: string, allSkills: any): Record<string, string[]> {
+    const skillMapping: Record<string, Record<string, string[]>> = {
+      frontend: {
+        languages: ['JavaScript', 'TypeScript', 'HTML', 'CSS'],
+        frontend: allSkills.frontend || ['React', 'Next.js', 'Tailwind CSS'],
+      },
+      backend: {
+        languages: ['TypeScript', 'Python', 'Node.js'],
+        backend: allSkills.backend || ['Node.js', 'Express', 'REST APIs'],
+        databases: allSkills.databases || ['PostgreSQL', 'MongoDB'],
+      },
+      fullstack: allSkills,
+      data: {
+        languages: ['Python', 'SQL', 'R'],
+        databases: allSkills.databases || ['PostgreSQL', 'MySQL'],
+        tools: allSkills.tools || ['Pandas', 'NumPy', 'Qlik'],
+      },
+      ai: {
+        languages: ['Python', 'TypeScript'],
+        tools: ['TensorFlow', 'PyTorch', 'AI APIs', 'Prompt Engineering'],
+        ai: allSkills.ai || ['Machine Learning', 'NLP'],
+      },
+      general: allSkills,
+    };
+    return skillMapping[variant] || skillMapping.general;
+  }
+
+  /**
+   * Filter experiences by variant focus
+   */
+  private filterExperienceByVariant(variant: string, experiences: any[]): any[] {
+    if (variant === 'general') return experiences;
+
+    const relevanceKeywords: Record<string, string[]> = {
+      frontend: ['frontend', 'react', 'ui', 'ux', 'javascript', 'web'],
+      backend: ['backend', 'api', 'database', 'server', 'node', 'python'],
+      fullstack: ['full stack', 'fullstack', 'react', 'node', 'developer'],
+      data: ['data', 'sql', 'analytics', 'bi', 'database'],
+      ai: ['ai', 'ml', 'machine learning', 'llm', 'nlp'],
+    };
+
+    const keywords = relevanceKeywords[variant] || [];
+
+    // Sort experiences by relevance to variant
+    return experiences
+      .map(exp => ({
+        ...exp,
+        relevance: keywords.filter(kw =>
+          (exp.title?.toLowerCase() || '').includes(kw) ||
+          (exp.description?.toLowerCase() || '').includes(kw) ||
+          (exp.highlights?.some((h: string) => h.toLowerCase().includes(kw)) || false)
+        ).length,
+      }))
+      .sort((a, b) => b.relevance - a.relevance)
+      .slice(0, 4)
+      .map(({ relevance, ...rest }) => rest);
+  }
+
   private async generateDocxFile(userProfile: any, cvContent: any): Promise<string> {
     const fileName = `cv-${userProfile.id}-${Date.now()}.docx`;
     const filePath = path.join(this.cvOutputDir, fileName);

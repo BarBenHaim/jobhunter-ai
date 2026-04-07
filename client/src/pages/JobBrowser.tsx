@@ -12,6 +12,7 @@ import {
   Square,
   Loader2,
   RefreshCw,
+  ChevronDown,
 } from 'lucide-react'
 import { Card } from '@/components/common/Card'
 import { Badge } from '@/components/common/Badge'
@@ -39,6 +40,8 @@ const JobBrowser = () => {
   const [page, setPage] = useState(1)
   const [selectedJobs, setSelectedJobs] = useState<Set<string>>(new Set())
   const [searchInput, setSearchInput] = useState('')
+  const [locationInput, setLocationInput] = useState('')
+  const [advancedOpen, setAdvancedOpen] = useState(false)
   const [filters, setFilters] = useState<JobFilters>({
     sort: 'createdAt',
     order: 'desc',
@@ -128,28 +131,39 @@ const JobBrowser = () => {
 
   return (
     <div className="space-y-4">
-      {/* Filter & View Controls */}
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        {/* Search & Filters */}
-        <form onSubmit={handleSearch} className="flex-1 flex gap-2 flex-wrap items-center">
-          <div className="relative flex-1 min-w-64">
-            <Search className="absolute left-3 top-3 text-gray-400" size={18} />
-            <input
-              type="text"
-              placeholder="Search jobs... (React, Node.js, Full Stack...)"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-300 bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-            />
-          </div>
+      {/* Main Search Bar */}
+      <form onSubmit={handleSearch} className="flex gap-2">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-3 text-gray-400" size={18} />
+          <input
+            type="text"
+            placeholder="Search job titles and companies... (React, NodeJS, Full Stack...)"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            className="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-300 bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+          />
+        </div>
+        <button
+          type="button"
+          onClick={() => refetch()}
+          className="p-2 rounded-lg border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+          title="Refresh"
+        >
+          <RefreshCw size={18} className="text-gray-500" />
+        </button>
+      </form>
 
+      {/* Basic Filters & View Controls */}
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        {/* Basic Filters */}
+        <div className="flex gap-2 flex-wrap items-center">
           <select
             value={filters.source || ''}
             onChange={(e) => {
               setFilters({ ...filters, source: e.target.value || undefined })
               setPage(1)
             }}
-            className="px-4 py-2 rounded-lg border border-gray-300 bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+            className="px-4 py-2 rounded-lg border border-gray-300 bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
           >
             <option value="">All Sources</option>
             {Object.entries(SOURCE_DISPLAY).map(([key, info]) => (
@@ -165,36 +179,23 @@ const JobBrowser = () => {
               setFilters({ ...filters, locationType: e.target.value || undefined })
               setPage(1)
             }}
-            className="px-4 py-2 rounded-lg border border-gray-300 bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+            className="px-4 py-2 rounded-lg border border-gray-300 bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
           >
-            <option value="">All Locations</option>
+            <option value="">All Work Types</option>
             <option value="REMOTE">Remote</option>
             <option value="HYBRID">Hybrid</option>
             <option value="ONSITE">On-site</option>
           </select>
 
-          <select
-            value={filters.sort || 'createdAt'}
-            onChange={(e) => {
-              setFilters({ ...filters, sort: e.target.value })
-              setPage(1)
-            }}
-            className="px-4 py-2 rounded-lg border border-gray-300 bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-          >
-            <option value="createdAt">Sort by Newest</option>
-            <option value="title">Sort by Title</option>
-            <option value="company">Sort by Company</option>
-          </select>
-
           <button
             type="button"
-            onClick={() => refetch()}
-            className="p-2 rounded-lg border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-            title="Refresh"
+            onClick={() => setAdvancedOpen(!advancedOpen)}
+            className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-sm font-medium flex items-center gap-2"
           >
-            <RefreshCw size={18} className="text-gray-500" />
+            <span>Advanced Filters</span>
+            <ChevronDown size={16} className={`transition-transform ${advancedOpen ? 'rotate-180' : ''}`} />
           </button>
-        </form>
+        </div>
 
         {/* View Toggle */}
         <div className="flex gap-2">
@@ -220,6 +221,99 @@ const JobBrowser = () => {
           </button>
         </div>
       </div>
+
+      {/* Advanced Filters */}
+      {advancedOpen && (
+        <div className="p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Location Filter */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Location</label>
+              <input
+                type="text"
+                placeholder="e.g., Tel Aviv, Israel"
+                value={locationInput}
+                onChange={(e) => setLocationInput(e.target.value)}
+                onBlur={() => {
+                  if (locationInput) {
+                    setFilters({ ...filters, location: locationInput })
+                    setPage(1)
+                  }
+                }}
+                className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 dark:text-white text-sm"
+              />
+            </div>
+
+            {/* Experience Level Filter */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Experience Level</label>
+              <select
+                value={filters.experienceLevel || ''}
+                onChange={(e) => {
+                  setFilters({ ...filters, experienceLevel: e.target.value || undefined })
+                  setPage(1)
+                }}
+                className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 dark:text-white text-sm"
+              >
+                <option value="">All Levels</option>
+                <option value="ENTRY">Entry Level</option>
+                <option value="JUNIOR">Junior</option>
+                <option value="MID">Mid Level</option>
+                <option value="SENIOR">Senior</option>
+                <option value="LEAD">Lead</option>
+              </select>
+            </div>
+
+            {/* Date Posted Filter */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Posted</label>
+              <select
+                value={filters.datePosted || ''}
+                onChange={(e) => {
+                  setFilters({ ...filters, datePosted: e.target.value || undefined })
+                  setPage(1)
+                }}
+                className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 dark:text-white text-sm"
+              >
+                <option value="">All Time</option>
+                <option value="24h">Last 24 Hours</option>
+                <option value="7d">Last 7 Days</option>
+                <option value="30d">Last 30 Days</option>
+              </select>
+            </div>
+
+            {/* Sort Filter */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Sort By</label>
+              <select
+                value={filters.sort || 'createdAt'}
+                onChange={(e) => {
+                  setFilters({ ...filters, sort: e.target.value })
+                  setPage(1)
+                }}
+                className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 dark:text-white text-sm"
+              >
+                <option value="createdAt">Newest First</option>
+                <option value="title">Title (A-Z)</option>
+                <option value="company">Company (A-Z)</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Reset Button */}
+          <button
+            type="button"
+            onClick={() => {
+              setFilters({ sort: 'createdAt', order: 'desc' })
+              setLocationInput('')
+              setPage(1)
+            }}
+            className="text-sm text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 font-medium"
+          >
+            Reset Filters
+          </button>
+        </div>
+      )}
 
       {/* Results count */}
       <div className="text-sm text-gray-500 dark:text-gray-400">

@@ -278,4 +278,55 @@ router.post(
   })
 );
 
+// POST /api/cv/generate-standalone - Generate a standalone ATS-optimized CV
+router.post(
+  '/generate-standalone',
+  [
+    body('format').optional().isIn(['pdf', 'docx']).withMessage('Format must be pdf or docx'),
+    body('variant')
+      .optional()
+      .isIn(['general', 'frontend', 'backend', 'fullstack', 'data', 'ai'])
+      .withMessage('Invalid CV variant'),
+    body('targetRole').optional().isString(),
+  ],
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid input',
+          details: errors.array(),
+        },
+      });
+      return;
+    }
+
+    const format = req.body.format || 'pdf';
+    const variant = req.body.variant || 'general';
+    const targetRole = req.body.targetRole;
+
+    const cvData = await cvService.generateStandaloneCV(req.userId, format, variant, targetRole);
+
+    res.status(200).json({
+      success: true,
+      data: cvData,
+    });
+  })
+);
+
+// POST /api/cv/generate-ats-versions - Generate multiple ATS variants
+router.post(
+  '/generate-ats-versions',
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const versions = await cvService.generateATSVersions(req.userId);
+
+    res.status(200).json({
+      success: true,
+      data: versions,
+    });
+  })
+);
+
 export default router;

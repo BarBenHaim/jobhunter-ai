@@ -13,6 +13,7 @@ import {
   Settings,
   Bell,
   Zap,
+  FileBadge,
 } from 'lucide-react'
 import { useAppStore } from '@/stores/app.store'
 
@@ -23,6 +24,7 @@ const navItems = [
   { label: 'Review Queue', path: '/review', icon: FileText },
   { label: 'Personas', path: '/personas', icon: Users },
   { label: 'Profile', path: '/profile', icon: User },
+  { label: 'CV Generator', path: '/cv-generator', icon: FileBadge },
   { label: 'Analytics', path: '/analytics', icon: BarChart3 },
   { label: 'Settings', path: '/settings', icon: Settings },
 ]

@@ -45,82 +45,91 @@ class LightweightScraperService {
   }
 
   /**
-   * Scrape Indeed Israel for job listings
-   * NOTE: Indeed is heavily JS-rendered and blocks server-side requests.
-   * This scraper is kept for compatibility but will likely return 0 results
-   * without a headless browser. Consider using Google Jobs via SerpAPI instead.
+   * Scrape Indeed Israel via RSS feed
+   * Indeed RSS feed works without JS rendering and returns valid job listings
    */
   private async scrapeIndeedIsrael(keywords: string[], location: string): Promise<ScrapedJob[]> {
     try {
-      logger.info('Scraping Indeed Israel (limited - JS-rendered site)', { keywords, location });
-
+      logger.info('Scraping Indeed Israel via RSS feed', { keywords, location });
       const jobs: ScrapedJob[] = [];
       const searchTerms = keywords.join(' ');
 
-      // Build URL for Indeed Israel
-      const url = `https://il.indeed.com/jobs?q=${encodeURIComponent(searchTerms)}&l=${encodeURIComponent(location || 'Israel')}`;
+      // Indeed RSS feed works without JS rendering
+      const url = `https://il.indeed.com/rss?q=${encodeURIComponent(searchTerms)}&l=${encodeURIComponent(location || 'Israel')}&sort=date`;
 
-      const response = await this.axiosInstance.get(url);
-      const $ = cheerio.load(response.data);
+      const response = await this.axiosInstance.get(url, {
+        headers: {
+          'User-Agent': this.USER_AGENT,
+          'Accept': 'application/rss+xml, application/xml, text/xml',
+        },
+      });
 
-      // Try multiple selector patterns (Indeed changes their HTML frequently)
-      const selectors = [
-        '.jobsearch-ResultsList .job_seen_beacon',
-        '.jobsearch-ResultsList li',
-        '.resultContent',
-        '[data-jk]',
-      ];
+      const $ = cheerio.load(response.data, { xmlMode: true });
+      const items = $('item');
 
-      let jobElements: cheerio.Cheerio<any> | null = null;
-      for (const sel of selectors) {
-        const found = $(sel);
-        if (found.length > 0) {
-          jobElements = found;
-          logger.info(`Indeed: Using selector "${sel}", found ${found.length} elements`);
-          break;
-        }
-      }
+      logger.info(`Indeed RSS: Found ${items.length} items`);
 
-      if (!jobElements || jobElements.length === 0) {
-        logger.warn('Indeed: No job elements found. Site likely requires JavaScript rendering.');
-        return [];
-      }
-
-      jobElements.each((i: number, elem: any) => {
+      items.each((i: number, elem: any) => {
         try {
-          const $elem = $(elem);
-
-          const title = $elem.find('h2 a, .jobTitle a, [data-jk] a').first().text().trim();
+          const $item = $(elem);
+          const title = $item.find('title').text().trim();
           if (!title) return;
 
-          const company = $elem.find('[data-testid="company-name"], .companyName, .company_location span').first().text().trim();
-          const jobLocation = $elem.find('[data-testid="text-location"], .companyLocation, .job_snippet_location').first().text().trim() || location;
-          const jobUrl = $elem.find('h2 a, .jobTitle a').first().attr('href');
-          const sourceUrl = jobUrl ? (jobUrl.startsWith('http') ? jobUrl : `https://il.indeed.com${jobUrl}`) : '';
-          const description = $elem.find('.job-snippet, .job_snippet').text().trim();
+          const sourceUrl = $item.find('link').text().trim();
+          const descriptionHtml = $item.find('description').text().trim();
+
+          // Parse company and location from description
+          const descParsed = cheerio.load(descriptionHtml);
+          const fullText = descParsed.text().trim();
+
+          // Indeed RSS format: company name is usually before the dash or in specific patterns
+          let company = 'Unknown';
+          let jobLocation = location || 'Israel';
+
+          // Try to extract company from the source tag
+          const source = $item.find('source').text().trim();
+          if (source) {
+            company = source.replace(/ - Indeed$/, '').trim();
+          }
+
+          // Fallback: extract from description
+          if (company === 'Unknown') {
+            // Pattern: "Company Name - Location" often appears
+            const companyMatch = fullText.match(/^(.+?)\s*[-–]\s*(.+?)[-–]/);
+            if (companyMatch) {
+              company = companyMatch[1].trim();
+              jobLocation = companyMatch[2].trim() || jobLocation;
+            }
+          }
+
+          const pubDate = $item.find('pubDate').text().trim();
+          const postedAt = pubDate ? new Date(pubDate) : new Date();
+
+          // Extract job ID from URL
           const externalId = this.extractIndeedJobId(sourceUrl);
 
-          if (title && company) {
+          if (title) {
             jobs.push({
               title,
               company,
               location: jobLocation,
               locationType: 'hybrid',
-              description,
+              description: fullText.substring(0, 500),
               sourceUrl,
               source: 'INDEED',
+              postedAt,
               externalId,
             });
           }
         } catch (err) {
-          logger.warn('Error parsing Indeed job item', { error: err });
+          logger.warn('Error parsing Indeed RSS item', { error: err });
         }
       });
 
-      logger.info(`Found ${jobs.length} jobs on Indeed Israel`);
+      logger.info(`Found ${jobs.length} jobs on Indeed Israel via RSS`);
       return jobs;
     } catch (error) {
-      logger.error('Error scraping Indeed Israel', { error });
+      logger.error('Error scraping Indeed Israel RSS', { error });
       return [];
     }
   }
@@ -474,6 +483,97 @@ class LightweightScraperService {
   }
 
   /**
+   * Scrape career pages via Google search
+   * Searches for job listings on common ATS platforms (Greenhouse, Lever, Ashby)
+   */
+  private async scrapeCareerPages(keywords: string[], location: string): Promise<ScrapedJob[]> {
+    try {
+      logger.info('Scraping career pages via Google search', { keywords, location });
+      const jobs: ScrapedJob[] = [];
+      const searchTerms = keywords.join(' ');
+
+      // Search for career page listings on common ATS platforms
+      const searchQueries = [
+        `${searchTerms} Israel site:boards.greenhouse.io`,
+        `${searchTerms} Israel site:jobs.lever.co`,
+        `${searchTerms} Israel site:jobs.ashbyhq.com`,
+      ];
+
+      for (const query of searchQueries) {
+        try {
+          const url = `https://www.google.com/search?q=${encodeURIComponent(query)}&num=10`;
+          const response = await this.axiosInstance.get(url, {
+            headers: {
+              'User-Agent': this.USER_AGENT,
+              'Accept': 'text/html',
+              'Accept-Language': 'en-US,en;q=0.9',
+            },
+          });
+
+          const $ = cheerio.load(response.data);
+
+          // Parse Google search results
+          $('div.g, div[data-sokoban-container]').each((i: number, elem: any) => {
+            try {
+              const $result = $(elem);
+              const linkElem = $result.find('a').first();
+              const sourceUrl = linkElem.attr('href') || '';
+
+              if (!sourceUrl.includes('greenhouse.io') && !sourceUrl.includes('lever.co') && !sourceUrl.includes('ashbyhq.com')) return;
+
+              const titleText = $result.find('h3').first().text().trim();
+              if (!titleText) return;
+
+              // Extract company from URL pattern
+              let company = 'Unknown';
+              const ghMatch = sourceUrl.match(/boards\.greenhouse\.io\/([^\/]+)/);
+              const leverMatch = sourceUrl.match(/jobs\.lever\.co\/([^\/]+)/);
+              const ashbyMatch = sourceUrl.match(/jobs\.ashbyhq\.com\/([^\/]+)/);
+
+              if (ghMatch) company = ghMatch[1].replace(/[-_]/g, ' ');
+              else if (leverMatch) company = leverMatch[1].replace(/[-_]/g, ' ');
+              else if (ashbyMatch) company = ashbyMatch[1].replace(/[-_]/g, ' ');
+
+              // Capitalize company name
+              company = company.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+
+              const description = $result.find('.VwiC3b, [data-sncf]').first().text().trim();
+
+              jobs.push({
+                title: titleText.replace(/ at .*$/, '').replace(/ - .*$/, '').trim(),
+                company,
+                location: location || 'Israel',
+                locationType: 'hybrid',
+                description: description.substring(0, 300),
+                sourceUrl: sourceUrl.startsWith('/url?q=') ? decodeURIComponent(sourceUrl.replace('/url?q=', '').split('&')[0]) : sourceUrl,
+                source: 'COMPANY_CAREER_PAGE',
+              });
+            } catch (err) {
+              // skip individual parsing errors
+            }
+          });
+        } catch (err) {
+          logger.warn('Career page search failed for query', { query, error: err });
+        }
+      }
+
+      // Deduplicate by URL
+      const seen = new Set<string>();
+      const uniqueJobs = jobs.filter(j => {
+        if (seen.has(j.sourceUrl)) return false;
+        seen.add(j.sourceUrl);
+        return true;
+      });
+
+      logger.info(`Found ${uniqueJobs.length} career page jobs`);
+      return uniqueJobs;
+    } catch (error) {
+      logger.error('Error scraping career pages', { error });
+      return [];
+    }
+  }
+
+  /**
    * Main scraper function that runs all scrapers
    */
   async scrapeAll(keywords: string[] = [], location: string = 'Israel'): Promise<ScrapeResult[]> {
@@ -486,7 +586,7 @@ class LightweightScraperService {
     const searchLocation = location || 'Israel';
 
     // Run all scrapers in parallel
-    const [indeedJobs, drushimJobs, allJobsJobs, googleJobs] = await Promise.all([
+    const [indeedJobs, drushimJobs, allJobsJobs, googleJobs, careerPageJobs] = await Promise.all([
       this.scrapeIndeedIsrael(searchTerms, searchLocation).catch((err) => {
         logger.error('Indeed scraper failed', err);
         return [];
@@ -501,6 +601,10 @@ class LightweightScraperService {
       }),
       this.scrapeGoogleJobs(searchTerms, searchLocation).catch((err) => {
         logger.error('Google Jobs scraper failed', err);
+        return [];
+      }),
+      this.scrapeCareerPages(searchTerms, searchLocation).catch((err) => {
+        logger.error('Career pages scraper failed', err);
         return [];
       }),
     ]);
@@ -534,12 +638,20 @@ class LightweightScraperService {
       timestamp: new Date(),
     });
 
-    const totalJobs = indeedJobs.length + drushimJobs.length + allJobsJobs.length + googleJobs.length;
+    results.push({
+      source: 'COMPANY_CAREER_PAGE',
+      jobs: careerPageJobs,
+      count: careerPageJobs.length,
+      timestamp: new Date(),
+    });
+
+    const totalJobs = indeedJobs.length + drushimJobs.length + allJobsJobs.length + googleJobs.length + careerPageJobs.length;
     logger.info(`Scraping completed. Total jobs found: ${totalJobs}`, {
       indeed: indeedJobs.length,
       drushim: drushimJobs.length,
       alljobs: allJobsJobs.length,
       googleJobs: googleJobs.length,
+      careerPages: careerPageJobs.length,
     });
 
     return results;
@@ -572,6 +684,9 @@ class LightweightScraperService {
         break;
       case 'GOOGLE_JOBS':
         jobs = await this.scrapeGoogleJobs(searchTerms, searchLocation);
+        break;
+      case 'COMPANY_CAREER_PAGE':
+        jobs = await this.scrapeCareerPages(searchTerms, searchLocation);
         break;
       default:
         logger.warn(`Unknown source: ${source}`);

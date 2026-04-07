@@ -214,14 +214,19 @@ Skills: TypeScript, JavaScript, Python, React, Next.js, Node.js, PHP, MySQL, Mon
   contentLength: 1200,
 };
 
-// Demo login — finds or creates the single user profile, returns a real JWT
+// Demo login — finds or creates the user, ensures passwordHash is set
 app.post('/api/auth/demo-login', authLimiter, asyncHandler(async (req: Request, res: Response) => {
-  let profile = await prisma.userProfile.findFirst();
+  const email = 'barbenbh@gmail.com';
+  let profile = await prisma.userProfile.findUnique({ where: { email } });
+
   if (!profile) {
+    // Create new user with password hash
+    const passwordHash = await bcrypt.hash('123456', 12);
     profile = await prisma.userProfile.create({
       data: {
         fullName: 'Bar Ben Haim',
-        email: 'barbenbh@gmail.com',
+        email,
+        passwordHash,
         phone: '052-661-8184',
         location: 'Israel',
         linkedinUrl: 'https://linkedin.com/in/barbenhaim',
@@ -236,30 +241,35 @@ app.post('/api/auth/demo-login', authLimiter, asyncHandler(async (req: Request, 
         },
       },
     });
-    logger.info('Created Bar Ben Haim profile from CV', { id: profile.id });
-  } else if (!profile.structuredProfile || Object.keys(profile.structuredProfile as any).length === 0) {
-    // Update existing profile with real CV data if structured profile is empty
-    profile = await prisma.userProfile.update({
-      where: { id: profile.id },
-      data: {
-        fullName: 'Bar Ben Haim',
-        email: 'barbenbh@gmail.com',
-        phone: '052-661-8184',
-        location: 'Israel',
-        linkedinUrl: 'https://linkedin.com/in/barbenhaim',
-        githubUrl: 'https://github.com/barbenhaim',
-        structuredProfile: BAR_CV_STRUCTURED_PROFILE,
-        rawKnowledge: BAR_CV_RAW_KNOWLEDGE,
-        preferences: {
-          jobTypes: ['Full Stack Developer', 'Frontend Developer', 'Backend Developer', 'Software Engineer'],
-          locations: ['Israel', 'Tel Aviv', 'Remote'],
-          experience: 'mid',
-          sources: ['DRUSHIM', 'ALLJOBS'],
+    logger.info('Created Bar Ben Haim profile with password hash', { id: profile.id });
+  } else {
+    // Update existing profile if missing passwordHash or CV data
+    const needsUpdate = !profile.passwordHash || !profile.structuredProfile || Object.keys(profile.structuredProfile as any).length === 0;
+    if (needsUpdate) {
+      const passwordHash = profile.passwordHash || await bcrypt.hash('123456', 12);
+      profile = await prisma.userProfile.update({
+        where: { id: profile.id },
+        data: {
+          fullName: 'Bar Ben Haim',
+          passwordHash,
+          phone: '052-661-8184',
+          location: 'Israel',
+          linkedinUrl: 'https://linkedin.com/in/barbenhaim',
+          githubUrl: 'https://github.com/barbenhaim',
+          structuredProfile: BAR_CV_STRUCTURED_PROFILE,
+          rawKnowledge: BAR_CV_RAW_KNOWLEDGE,
+          preferences: {
+            jobTypes: ['Full Stack Developer', 'Frontend Developer', 'Backend Developer', 'Software Engineer'],
+            locations: ['Israel', 'Tel Aviv', 'Remote'],
+            experience: 'mid',
+            sources: ['DRUSHIM', 'ALLJOBS'],
+          },
         },
-      },
-    });
-    logger.info('Updated profile with Bar Ben Haim CV data', { id: profile.id });
+      });
+      logger.info('Updated profile with Bar Ben Haim CV data and password', { id: profile.id });
+    }
   }
+
   const token = generateToken(profile.id);
   logger.info('Demo login', { userId: profile.id });
   res.json({ success: true, token, user: profile });
@@ -304,12 +314,12 @@ app.post('/api/auth/login', authLimiter, asyncHandler(async (req: Request, res: 
   }
 
   const profile = await prisma.userProfile.findUnique({ where: { email } });
-  if (!profile || !(profile as any).passwordHash) {
+  if (!profile || !profile.passwordHash) {
     res.status(401).json({ success: false, error: 'Invalid email or password' });
     return;
   }
 
-  const valid = await bcrypt.compare(password, (profile as any).passwordHash);
+  const valid = await bcrypt.compare(password, profile.passwordHash);
   if (!valid) {
     res.status(401).json({ success: false, error: 'Invalid email or password' });
     return;
@@ -342,7 +352,7 @@ app.post('/api/auth/register', authLimiter, asyncHandler(async (req: Request, re
       structuredProfile: {},
       rawKnowledge: {},
       preferences: {},
-    } as any,
+    },
   });
 
   const token = generateToken(profile.id);
@@ -413,6 +423,47 @@ const gracefulShutdown = async () => {
 process.on('SIGTERM', gracefulShutdown);
 process.on('SIGINT', gracefulShutdown);
 
+// Initialize demo user on startup
+const initializeDemoUser = async () => {
+  try {
+    const email = 'barbenbh@gmail.com';
+    let user = await prisma.userProfile.findUnique({ where: { email } });
+
+    if (!user) {
+      const passwordHash = await bcrypt.hash('123456', 12);
+      user = await prisma.userProfile.create({
+        data: {
+          fullName: 'Bar Ben Haim',
+          email,
+          passwordHash,
+          phone: '052-661-8184',
+          location: 'Israel',
+          linkedinUrl: 'https://linkedin.com/in/barbenhaim',
+          githubUrl: 'https://github.com/barbenhaim',
+          structuredProfile: BAR_CV_STRUCTURED_PROFILE,
+          rawKnowledge: BAR_CV_RAW_KNOWLEDGE,
+          preferences: {
+            jobTypes: ['Full Stack Developer', 'Frontend Developer', 'Backend Developer', 'Software Engineer'],
+            locations: ['Israel', 'Tel Aviv', 'Remote'],
+            experience: 'mid',
+            sources: ['DRUSHIM', 'ALLJOBS'],
+          },
+        },
+      });
+      logger.info('Created demo user on startup', { id: user.id });
+    } else if (!user.passwordHash) {
+      const passwordHash = await bcrypt.hash('123456', 12);
+      user = await prisma.userProfile.update({
+        where: { id: user.id },
+        data: { passwordHash },
+      });
+      logger.info('Updated demo user with password hash', { id: user.id });
+    }
+  } catch (error) {
+    logger.error('Failed to initialize demo user:', error);
+  }
+};
+
 process.on('uncaughtException', (error) => {
   logger.error('Uncaught exception:', error);
   process.exit(1);
@@ -423,9 +474,12 @@ process.on('unhandledRejection', (reason, promise) => {
   process.exit(1);
 });
 
-server.listen(PORT, () => {
+server.listen(PORT, async () => {
   logger.info(`Server running on port ${PORT} in ${NODE_ENV} mode`);
   logger.info(`Health check: http://localhost:${PORT}/health`);
+
+  // Initialize demo user
+  await initializeDemoUser();
 
   try {
     initializeQueueProcessors();

@@ -13,6 +13,12 @@ const DEFAULT_KEYWORDS = [
   'TypeScript',
   'Frontend',
   'Backend',
+  'Software Engineer',
+  'Developer',
+  'AI',
+  'Machine Learning',
+  'Data Engineer',
+  'DevOps',
   'מפתח תוכנה',
   'פיתוח',
 ]
@@ -100,6 +106,7 @@ const SOURCE_MAP: Record<string, string> = {
   drushim: 'DRUSHIM',
   alljobs: 'ALLJOBS',
   google: 'GOOGLE_JOBS',
+  careers: 'COMPANY_CAREER_PAGE',
 }
 
 // POST /api/scrape/single - Scrape a single source
@@ -160,7 +167,7 @@ router.get('/status', async (_req: Request, res: Response) => {
     const totalJobsInDB = await jobService.countJobs()
     const sourceCounts = await jobService.getSourceCounts()
 
-    const availableSources = ['INDEED', 'DRUSHIM', 'ALLJOBS', 'GOOGLE_JOBS']
+    const availableSources = ['INDEED', 'DRUSHIM', 'ALLJOBS', 'GOOGLE_JOBS', 'COMPANY_CAREER_PAGE']
 
     // Build databaseStats with shape the frontend expects: { SOURCE: { totalJobs, activeJobs } }
     const databaseStats: Record<string, any> = {}
@@ -211,8 +218,8 @@ router.get('/sources', (_req: Request, res: Response) => {
           id: 'INDEED',
           name: 'Indeed Israel',
           url: 'https://il.indeed.com',
-          description: 'Indeed Israel (limited - site requires JavaScript rendering)',
-          available: false,
+          description: 'Indeed Israel via RSS feed',
+          available: true,
         },
         {
           id: 'DRUSHIM',
@@ -235,6 +242,13 @@ router.get('/sources', (_req: Request, res: Response) => {
           description: 'Google Jobs via SerpAPI (requires API key)',
           available: !!process.env.SERPAPI_KEY,
           requiresApiKey: 'SERPAPI_KEY',
+        },
+        {
+          id: 'COMPANY_CAREER_PAGE',
+          name: 'Company Career Pages',
+          url: 'https://www.google.com',
+          description: 'Company career pages via Google search (Greenhouse, Lever, Ashby)',
+          available: true,
         },
       ],
     },

@@ -43,4 +43,18 @@ export const cvApi = {
     })
     return data
   },
+
+  async generateStandalone(format: string, variant: string, targetRole?: string): Promise<any> {
+    const { data } = await apiClient.post('/cv/generate-standalone', {
+      format,
+      variant,
+      targetRole,
+    })
+    return data
+  },
+
+  async generateATSVersions(): Promise<any> {
+    const { data } = await apiClient.post('/cv/generate-ats-versions')
+    return data
+  },
 }

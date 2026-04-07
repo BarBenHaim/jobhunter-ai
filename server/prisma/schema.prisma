@@ -68,6 +68,7 @@ model UserProfile {
   id                 String   @id @default(cuid())
   fullName           String
   email              String   @unique
+  passwordHash       String?
   phone              String?
   location           String?
   linkedinUrl        String?
