@@ -13,6 +13,7 @@ import {
   Loader2,
   RefreshCw,
   ChevronDown,
+  FileText,
 } from 'lucide-react'
 import { Card } from '@/components/common/Card'
 import { Badge } from '@/components/common/Badge'
@@ -420,6 +421,17 @@ const JobBrowser = () => {
                       <p className="text-xs text-gray-500 dark:text-gray-400">{formatDate(job.postedAt || job.scrapedAt)}</p>
                     </div>
 
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        navigate(`/cv-generator?jobId=${job.id}`)
+                      }}
+                      className="flex-shrink-0 p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400 hover:text-primary-600 dark:hover:text-primary-400"
+                      title="Generate CV for this job"
+                    >
+                      <FileText size={18} />
+                    </button>
+
                     {job.sourceUrl && (
                       <button
                         onClick={(e) => {
@@ -485,6 +497,16 @@ const JobBrowser = () => {
                     </div>
 
                     <div className="mt-4 flex gap-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          navigate(`/cv-generator?jobId=${job.id}`)
+                        }}
+                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400 text-xs font-medium hover:bg-primary-100 dark:hover:bg-primary-900/30 transition-colors"
+                      >
+                        <FileText size={12} />
+                        צור CV
+                      </button>
                       {job.sourceUrl && (
                         <button
                           onClick={(e) => {

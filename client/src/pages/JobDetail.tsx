@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   ChevronLeft,
@@ -28,6 +28,7 @@ interface JobDetailData extends Job {
 
 const JobDetail = () => {
   const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
   const [showCVPreview, setShowCVPreview] = useState(false)
 
   // Fetch job details
@@ -339,9 +340,17 @@ const JobDetail = () => {
           {/* Action Buttons */}
           <Card>
             <div className="space-y-2">
+              <button
+                onClick={() => navigate(`/cv-generator?jobId=${id}`)}
+                className="w-full rounded-lg bg-gradient-to-r from-primary-600 to-purple-600 px-4 py-3 text-white hover:shadow-lg font-medium transition-all flex items-center justify-center gap-2"
+              >
+                <FileText size={18} />
+                Generate Tailored CV
+              </button>
+
               {!job.application ? (
                 <>
-                  <button className="w-full rounded-lg bg-primary-600 px-4 py-2 text-white hover:bg-primary-700 font-medium transition-colors">
+                  <button className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:hover:bg-gray-700 font-medium transition-colors">
                     Generate CV & Apply
                   </button>
                   <button className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:hover:bg-gray-700 font-medium transition-colors">

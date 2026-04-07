@@ -7,7 +7,6 @@ import {
   CheckCheck,
   Calendar,
   Activity,
-  MessageSquare,
   Clock,
   ArrowUpRight,
   Sparkles,
@@ -16,10 +15,13 @@ import {
   AlertCircle,
   XCircle,
   RefreshCw,
+  Search,
+  FileText,
+  Eye,
+  BarChart3,
 } from 'lucide-react'
 import { Card } from '@/components/common/Card'
 import { EmptyState } from '@/components/common/EmptyState'
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { scrapeApi } from '@/services/scrape.api'
 import { jobsApi } from '@/services/jobs.api'
 
@@ -183,15 +185,68 @@ const Dashboard = () => {
     }
   }
 
+  // Fetch recent jobs
+  const { data: recentJobs } = useQuery({
+    queryKey: ['recent-jobs'],
+    queryFn: async () => {
+      const res = await jobsApi.list({
+        skip: 0,
+        limit: 5,
+        sortBy: 'scrapedAt',
+        order: 'desc',
+      })
+      return res.data?.jobs || []
+    },
+  })
+
+  const showOnboardingBanner = totalJobsInDB === 0
+
   return (
     <div className="space-y-6">
-      {/* Welcome header */}
-      <div className="animate-slide-up">
-        <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 mb-1">
-          <Sparkles size={14} className="text-primary-500" />
-          <span>AI-powered job hunting - Israel Hi-Tech</span>
+      {/* Section 1: Welcome + Onboarding Banner (RTL) */}
+      {showOnboardingBanner && (
+        <div className="animate-slide-up rounded-2xl bg-gradient-to-r from-primary-50 to-purple-50 border border-primary-200/50 p-6 dark:from-primary-900/20 dark:to-purple-900/20 dark:border-primary-700/30">
+          <div className="text-right" dir="rtl">
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
+              ברוכים הבאים ל-JobHunter AI! 🎯
+            </h2>
+            <p className="text-gray-600 dark:text-gray-300 mb-5">
+              בואו נתחיל: 1) עדכנו את הפרופיל שלכם  2) חפשו משרות  3) צרו CV מותאם
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <button
+                onClick={() => navigate('/profile')}
+                className="rounded-xl bg-white px-4 py-3 font-semibold text-gray-900 shadow-md hover:shadow-lg hover:bg-gray-50 transition-all duration-200 active:scale-[0.98] dark:bg-gray-800 dark:text-white dark:hover:bg-gray-700"
+              >
+                עדכן פרופיל
+              </button>
+              <button
+                onClick={() => scrapeMutation.mutate()}
+                disabled={scrapeMutation.isPending}
+                className="rounded-xl bg-gradient-to-r from-primary-600 to-primary-500 px-4 py-3 font-semibold text-white shadow-md shadow-primary-500/20 hover:shadow-lg hover:from-primary-500 hover:to-primary-400 transition-all duration-200 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {scrapeMutation.isPending ? (
+                  <>
+                    <Loader2 size={18} className="animate-spin" />
+                    משיכה...
+                  </>
+                ) : (
+                  <>
+                    <Search size={18} />
+                    חפש משרות
+                  </>
+                )}
+              </button>
+              <button
+                onClick={() => navigate('/cv-generator')}
+                className="rounded-xl bg-white px-4 py-3 font-semibold text-gray-900 shadow-md hover:shadow-lg hover:bg-gray-50 transition-all duration-200 active:scale-[0.98] dark:bg-gray-800 dark:text-white dark:hover:bg-gray-700"
+              >
+                צור CV
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Scrape success/error message */}
       {scrapeMessage && (
@@ -204,25 +259,115 @@ const Dashboard = () => {
         </div>
       )}
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* Section 2: Quick Action Cards (2x2 grid) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Search Jobs Card */}
+        <button
+          onClick={() => scrapeMutation.mutate()}
+          disabled={scrapeMutation.isPending}
+          className="group animate-slide-up rounded-2xl bg-gradient-to-br from-blue-50 to-cyan-50 border border-blue-200/50 p-6 text-right hover:shadow-lg hover:border-blue-300/75 transition-all duration-200 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed dark:from-blue-900/20 dark:to-cyan-900/20 dark:border-blue-700/30 dark:hover:border-blue-600/50"
+          dir="rtl"
+        >
+          <div className="flex items-start justify-between">
+            <div className="flex-1">
+              <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-1">🔍 חפש משרות חדשות</h3>
+              {scrapeMutation.isPending && (
+                <p className="text-sm text-gray-600 dark:text-gray-400 flex items-center gap-2">
+                  <Loader2 size={14} className="animate-spin" />
+                  משיכה בעיצומה...
+                </p>
+              )}
+            </div>
+            <div className="rounded-xl bg-blue-100 p-3 dark:bg-blue-900/30 group-hover:scale-110 transition-transform duration-200">
+              <Search size={24} className="text-blue-600 dark:text-blue-400" />
+            </div>
+          </div>
+          {!scrapeMutation.isPending && (
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-3">
+              אתחל משיכה ממקורות משרות בישראל
+            </p>
+          )}
+        </button>
+
+        {/* CV Generator Card */}
+        <button
+          onClick={() => navigate('/cv-generator')}
+          className="group animate-slide-up rounded-2xl bg-gradient-to-br from-purple-50 to-pink-50 border border-purple-200/50 p-6 text-right hover:shadow-lg hover:border-purple-300/75 transition-all duration-200 active:scale-[0.98] dark:from-purple-900/20 dark:to-pink-900/20 dark:border-purple-700/30 dark:hover:border-purple-600/50 stagger-1"
+          dir="rtl"
+        >
+          <div className="flex items-start justify-between">
+            <div className="flex-1">
+              <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-1">📄 צור CV מותאם</h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                ייצור CV מותאם לכל משרה
+              </p>
+            </div>
+            <div className="rounded-xl bg-purple-100 p-3 dark:bg-purple-900/30 group-hover:scale-110 transition-transform duration-200">
+              <FileText size={24} className="text-purple-600 dark:text-purple-400" />
+            </div>
+          </div>
+        </button>
+
+        {/* Browse Jobs Card */}
+        <button
+          onClick={() => navigate('/jobs')}
+          className="group animate-slide-up rounded-2xl bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-200/50 p-6 text-right hover:shadow-lg hover:border-emerald-300/75 transition-all duration-200 active:scale-[0.98] dark:from-emerald-900/20 dark:to-teal-900/20 dark:border-emerald-700/30 dark:hover:border-emerald-600/50 stagger-2"
+          dir="rtl"
+        >
+          <div className="flex items-start justify-between">
+            <div className="flex-1">
+              <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-1">📋 צפה במשרות</h3>
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center justify-center rounded-full bg-emerald-600 text-white text-xs font-bold px-2.5 py-0.5">
+                  {totalJobsInDB}
+                </span>
+                <p className="text-xs text-gray-500 dark:text-gray-400">משרות זמינות</p>
+              </div>
+            </div>
+            <div className="rounded-xl bg-emerald-100 p-3 dark:bg-emerald-900/30 group-hover:scale-110 transition-transform duration-200">
+              <Eye size={24} className="text-emerald-600 dark:text-emerald-400" />
+            </div>
+          </div>
+        </button>
+
+        {/* Applications Card */}
+        <button
+          onClick={() => navigate('/pipeline')}
+          className="group animate-slide-up rounded-2xl bg-gradient-to-br from-orange-50 to-amber-50 border border-orange-200/50 p-6 text-right hover:shadow-lg hover:border-orange-300/75 transition-all duration-200 active:scale-[0.98] dark:from-orange-900/20 dark:to-amber-900/20 dark:border-orange-700/30 dark:hover:border-orange-600/50 stagger-3"
+          dir="rtl"
+        >
+          <div className="flex items-start justify-between">
+            <div className="flex-1">
+              <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-1">📊 הגשות שלי</h3>
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center justify-center rounded-full bg-orange-600 text-white text-xs font-bold px-2.5 py-0.5">
+                  {jobStats?.submittedCount || 0}
+                </span>
+                <p className="text-xs text-gray-500 dark:text-gray-400">הגשות</p>
+              </div>
+            </div>
+            <div className="rounded-xl bg-orange-100 p-3 dark:bg-orange-900/30 group-hover:scale-110 transition-transform duration-200">
+              <BarChart3 size={24} className="text-orange-600 dark:text-orange-400" />
+            </div>
+          </div>
+        </button>
+      </div>
+
+      {/* Section 3: Stats Summary (compact row) */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {statCards.map((card, index) => {
           const Icon = card.icon
           return (
-            <Card key={card.key} hover className={`animate-slide-up stagger-${index + 1}`}>
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-500 dark:text-gray-400">{card.label}</p>
-                  <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white tracking-tight">
+            <Card key={card.key} hover className={`animate-slide-up`}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium text-gray-500 dark:text-gray-400 truncate">{card.label}</p>
+                  <p className="mt-1 text-2xl font-bold text-gray-900 dark:text-white tracking-tight">
                     {statusLoading ? '...' : card.value}
                   </p>
-                  <div className="mt-1.5 flex items-center gap-1">
-                    <ArrowUpRight size={12} className="text-emerald-500" />
-                    <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400">{card.sub}</p>
-                  </div>
                 </div>
-                <div className={`rounded-2xl bg-gradient-to-br ${card.gradient} p-3 shadow-lg ${card.shadowColor}`}>
-                  <Icon className="text-white" size={22} />
+                <div className={`rounded-lg bg-gradient-to-br ${card.gradient} p-2 shadow-md ${card.shadowColor} flex-shrink-0`}>
+                  <Icon className="text-white" size={16} />
                 </div>
               </div>
             </Card>
@@ -230,183 +375,75 @@ const Dashboard = () => {
         })}
       </div>
 
-      {/* Main Content Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Chart & Info */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* Jobs per Source Chart */}
-          <Card className="animate-slide-up stagger-5">
-            <h2 className="mb-5 text-lg font-semibold text-gray-900 dark:text-white">Jobs by Source</h2>
-            {chartData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={chartData} barGap={4}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(156, 163, 175, 0.15)" vertical={false} />
-                  <XAxis dataKey="source" tick={{ fontSize: 12, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 12, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: 'rgba(17, 24, 39, 0.95)',
-                      border: 'none',
-                      borderRadius: '12px',
-                      color: 'white',
-                      boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
-                      backdropFilter: 'blur(8px)',
-                      padding: '12px 16px',
-                    }}
-                  />
-                  <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '16px' }} />
-                  <Bar dataKey="jobs" fill="url(#blueGradient)" name="Total Jobs" radius={[6, 6, 0, 0]} />
-                  <Bar dataKey="active" fill="url(#greenGradient)" name="Active Jobs" radius={[6, 6, 0, 0]} />
-                  <defs>
-                    <linearGradient id="blueGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#6366f1" />
-                      <stop offset="100%" stopColor="#818cf8" />
-                    </linearGradient>
-                    <linearGradient id="greenGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#10b981" />
-                      <stop offset="100%" stopColor="#34d399" />
-                    </linearGradient>
-                  </defs>
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <EmptyState
-                icon={Activity}
-                title="No data yet"
-                description="Trigger a scrape to start collecting jobs from Israeli job platforms"
-              />
-            )}
+      {/* Section 4: Recent Jobs Preview */}
+      {recentJobs && recentJobs.length > 0 && (
+        <div className="animate-slide-up">
+          <Card className="space-y-4">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white" dir="rtl">
+              🔥 המשרות האחרונות
+            </h2>
+            <div className="space-y-3">
+              {recentJobs.map((job: any) => (
+                <button
+                  key={job.id}
+                  onClick={() => navigate(`/jobs/${job.id}`)}
+                  className="group w-full rounded-xl border border-gray-200/50 bg-white/50 p-4 text-right hover:bg-primary-50/50 hover:border-primary-200/75 transition-all duration-200 dark:border-gray-700/50 dark:bg-gray-800/30 dark:hover:bg-primary-900/20 dark:hover:border-primary-700/50"
+                  dir="rtl"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-semibold text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors line-clamp-2">
+                        {job.title}
+                      </h3>
+                      <div className="mt-1.5 flex items-center gap-3 text-sm text-gray-600 dark:text-gray-400">
+                        <span>{job.company}</span>
+                        <span className="text-xs bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded-md">
+                          {job.source}
+                        </span>
+                      </div>
+                    </div>
+                    <ArrowUpRight size={18} className="text-gray-400 group-hover:text-primary-600 transition-colors flex-shrink-0 mt-1" />
+                  </div>
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => navigate('/jobs')}
+              className="w-full rounded-lg px-4 py-2 text-sm font-medium text-primary-600 hover:bg-primary-50 transition-colors dark:text-primary-400 dark:hover:bg-primary-900/20"
+              dir="rtl"
+            >
+              צפה בכל המשרות
+            </button>
           </Card>
+        </div>
+      )}
 
-          {/* Database Stats Detail */}
-          {statusData?.databaseStats && Object.keys(statusData.databaseStats).length > 0 && (
-            <Card className="animate-slide-up stagger-6">
-              <h2 className="mb-4 text-lg font-semibold text-gray-900 dark:text-white">Database Breakdown</h2>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                {Object.entries(statusData.databaseStats).map(([source, stats]: [string, any]) => (
-                  <div key={source} className="rounded-xl bg-gray-50 dark:bg-gray-800/50 p-4">
-                    <p className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                      {SOURCE_DISPLAY_NAMES[source] || source}
-                    </p>
-                    <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">
-                      {stats?.totalJobs || 0}
-                    </p>
+      {/* Section 5: Source Health (compact) */}
+      {sourceHealth && sourceHealth.length > 0 && (
+        <div className="animate-slide-up">
+          <Card>
+            <h2 className="mb-4 text-lg font-semibold text-gray-900 dark:text-white">מצב המקורות</h2>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              {sourceHealth.map((source) => (
+                <div key={source.id} className="rounded-xl bg-gray-50 dark:bg-gray-800/50 p-3 flex items-start gap-2.5">
+                  <div className="relative flex-shrink-0 mt-0.5">
+                    <div className={`w-2 h-2 rounded-full ${getStatusDot(source.status)}`} />
+                    {source.status === 'healthy' && (
+                      <div className={`absolute inset-0 w-2 h-2 rounded-full ${getStatusDot(source.status)} animate-ping opacity-30`} />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{source.name}</p>
                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                      {stats?.activeJobs || 0} active
+                      {source.lastJobsFound > 0 ? `${source.lastJobsFound} jobs` : 'Ready'}
                     </p>
                   </div>
-                ))}
-              </div>
-            </Card>
-          )}
-        </div>
-
-        {/* Right Sidebar */}
-        <div className="space-y-6">
-          {/* Quick Actions */}
-          <Card className="animate-slide-up stagger-3">
-            <h2 className="mb-4 text-lg font-semibold text-gray-900 dark:text-white">Quick Actions</h2>
-            <div className="space-y-2.5">
-              <button
-                onClick={() => scrapeMutation.mutate()}
-                disabled={scrapeMutation.isPending}
-                className="w-full rounded-xl bg-gradient-to-r from-primary-600 to-primary-500 px-4 py-3 text-white font-semibold shadow-md shadow-primary-500/20 hover:shadow-lg hover:shadow-primary-500/30 hover:from-primary-500 hover:to-primary-400 transition-all duration-200 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-              >
-                {scrapeMutation.isPending ? (
-                  <>
-                    <Loader2 size={18} className="animate-spin" />
-                    Scraping...
-                  </>
-                ) : (
-                  <>
-                    <RefreshCw size={18} />
-                    Trigger Scrape
-                  </>
-                )}
-              </button>
-              <button
-                onClick={() => navigate('/jobs')}
-                className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-semibold text-gray-700 shadow-sm hover:bg-gray-50 hover:border-gray-300 hover:shadow transition-all duration-200 active:scale-[0.98] dark:border-gray-700 dark:bg-gray-800/50 dark:text-gray-200 dark:hover:bg-gray-800 dark:hover:border-gray-600"
-              >
-                Browse Jobs
-              </button>
-              <button
-                onClick={() => navigate('/jobs?sort=scrapedAt&order=desc')}
-                className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-semibold text-gray-700 shadow-sm hover:bg-gray-50 hover:border-gray-300 hover:shadow transition-all duration-200 active:scale-[0.98] dark:border-gray-700 dark:bg-gray-800/50 dark:text-gray-200 dark:hover:bg-gray-800 dark:hover:border-gray-600"
-              >
-                View Latest
-              </button>
+                </div>
+              ))}
             </div>
           </Card>
-
-          {/* Source Health */}
-          <Card className="animate-slide-up stagger-5">
-            <h2 className="mb-4 text-lg font-semibold text-gray-900 dark:text-white">Source Health</h2>
-            {sourceHealth && sourceHealth.length > 0 ? (
-              <div className="space-y-2">
-                {sourceHealth.map((source) => (
-                  <div key={source.id} className="flex items-center justify-between p-2.5 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800/30 transition-colors duration-200 group">
-                    <div className="flex items-center gap-3">
-                      <div className="relative">
-                        <div className={`w-2.5 h-2.5 rounded-full ${getStatusDot(source.status)}`} />
-                        {source.status === 'healthy' && (
-                          <div className={`absolute inset-0 w-2.5 h-2.5 rounded-full ${getStatusDot(source.status)} animate-ping opacity-30`} />
-                        )}
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-gray-900 dark:text-white">{source.name}</p>
-                        <p className="text-xs text-gray-400 dark:text-gray-500">
-                          {source.lastJobsFound > 0
-                            ? `${source.lastJobsFound} jobs scraped`
-                            : source.requiresApiKey
-                            ? `Needs ${source.requiresApiKey}`
-                            : 'Not scraped yet'}
-                        </p>
-                      </div>
-                    </div>
-                    <span className={`text-xs font-semibold ${getStatusColor(source.status)}`}>
-                      {source.status === 'healthy' && 'OK'}
-                      {source.status === 'degraded' && 'Ready'}
-                      {source.status === 'down' && 'N/A'}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-gray-500 dark:text-gray-400">Loading sources...</p>
-            )}
-          </Card>
-
-          {/* Scrape History */}
-          {statusData?.currentStats?.sourceStats && Object.keys(statusData.currentStats.sourceStats).length > 0 && (
-            <Card className="animate-slide-up stagger-4">
-              <h2 className="mb-4 text-lg font-semibold text-gray-900 dark:text-white">Last Scrape Results</h2>
-              <div className="space-y-3">
-                {Object.entries(statusData.currentStats.sourceStats).map(([source, stats]: [string, any]) => (
-                  <div key={source} className="group rounded-xl border border-blue-200/60 bg-gradient-to-r from-blue-50 to-indigo-50 p-3.5 transition-all duration-200 hover:shadow-sm hover:border-blue-300/60 dark:border-blue-800/30 dark:from-blue-900/10 dark:to-indigo-900/10 dark:hover:border-blue-700/40">
-                    <div className="flex items-start gap-2.5">
-                      <div className="rounded-lg bg-blue-100 p-1.5 dark:bg-blue-900/30">
-                        <Clock size={14} className="text-blue-600 dark:text-blue-400" />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="font-semibold text-sm text-gray-900 dark:text-white">
-                          {SOURCE_DISPLAY_NAMES[source] || source}
-                        </p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">
-                          {stats.count} jobs found
-                        </p>
-                        <p className="text-xs font-medium text-blue-600 dark:text-blue-300 mt-1">
-                          {new Date(stats.timestamp).toLocaleString()}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </Card>
-          )}
         </div>
-      </div>
+      )}
     </div>
   )
 }

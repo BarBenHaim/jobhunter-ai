@@ -5,18 +5,12 @@ import {
   X,
   Home,
   Briefcase,
-  TrendingUp,
-  FileText,
-  Users,
   User,
-  BarChart3,
   Settings,
   Bell,
   Zap,
   FileBadge,
-  BookOpen,
-  Brain,
-  Sparkles,
+  TrendingUp,
   DollarSign,
 } from 'lucide-react'
 import { useAppStore } from '@/stores/app.store'
@@ -118,18 +112,12 @@ const CostTrackerWidget = () => {
 }
 
 const navItems = [
-  { label: 'Dashboard', path: '/', icon: Home },
-  { label: 'Jobs', path: '/jobs', icon: Briefcase },
-  { label: 'Pipeline', path: '/pipeline', icon: TrendingUp },
-  { label: 'Review Queue', path: '/review', icon: FileText },
-  { label: 'Personas', path: '/personas', icon: Users },
-  { label: 'Profile', path: '/profile', icon: User },
-  { label: 'CV Generator', path: '/cv-generator', icon: FileBadge },
-  { label: 'Intelligence', path: '/intelligence', icon: Brain },
-  { label: 'Discovery', path: '/discovery', icon: Sparkles },
-  { label: 'Analytics', path: '/analytics', icon: BarChart3 },
-  { label: 'Settings', path: '/settings', icon: Settings },
-  { label: 'Guide', path: '/guide', icon: BookOpen },
+  { label: 'דשבורד', path: '/', icon: Home },
+  { label: 'משרות', path: '/jobs', icon: Briefcase },
+  { label: 'קורות חיים', path: '/cv-generator', icon: FileBadge },
+  { label: 'הגשות', path: '/pipeline', icon: TrendingUp },
+  { label: 'פרופיל', path: '/profile', icon: User },
+  { label: 'הגדרות', path: '/settings', icon: Settings },
 ]
 
 export const Layout = ({ children }: { children: React.ReactNode }) => {

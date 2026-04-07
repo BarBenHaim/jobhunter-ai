@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { cvApi } from '@/services/cv.api'
 import { profileApi } from '@/services/profile.api'
 import { Download, Loader2, RefreshCw, Sparkles, CheckCircle, AlertCircle, Search, Briefcase, Target, ChevronRight } from 'lucide-react'
@@ -45,6 +46,9 @@ interface JobCVResult {
 }
 
 export default function CVGenerator() {
+  const [searchParams] = useSearchParams()
+  const preselectedJobId = searchParams.get('jobId')
+
   const [activeTab, setActiveTab] = useState<'job' | 'variant'>('job')
   const [profile, setProfile] = useState<any>(null)
   const [generating, setGenerating] = useState<Record<string, boolean>>({})
@@ -67,6 +71,17 @@ export default function CVGenerator() {
     profileApi.getProfile().then(setProfile).catch(console.error)
     fetchJobs()
   }, [])
+
+  // Auto-select job from URL param
+  useEffect(() => {
+    if (preselectedJobId && jobs.length > 0) {
+      const job = jobs.find((j: any) => j.id === preselectedJobId || j._id === preselectedJobId)
+      if (job) {
+        setSelectedJob(job)
+        setActiveTab('job')
+      }
+    }
+  }, [preselectedJobId, jobs])
 
   const fetchJobs = async () => {
     try {
