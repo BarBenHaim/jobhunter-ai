@@ -34,75 +34,13 @@ const PersonaManager = () => {
   // Fetch personas
   const { data: personas } = useQuery<PersonaData[]>({
     queryKey: ['personas'],
-    queryFn: async () => [
-      {
-        id: '1',
-        name: 'Frontend Pro',
-        title: 'Senior React Developer',
-        isActive: true,
-        applicationCount: 34,
-        responseRate: 32,
-        interviewRate: 18,
-        offerRate: 5,
-        description: 'Optimized for React and frontend-focused roles',
-      },
-      {
-        id: '2',
-        name: 'Full Stack Master',
-        title: 'Full Stack Engineer',
-        isActive: true,
-        applicationCount: 28,
-        responseRate: 25,
-        interviewRate: 14,
-        offerRate: 3,
-        description: 'Balanced approach for full stack positions',
-      },
-      {
-        id: '3',
-        name: 'Backend Specialist',
-        title: 'Senior Backend Engineer',
-        isActive: true,
-        applicationCount: 22,
-        responseRate: 36,
-        interviewRate: 16,
-        offerRate: 4,
-        description: 'Focused on backend and system design roles',
-      },
-      {
-        id: '4',
-        name: 'DevOps Engineer',
-        title: 'Infrastructure Specialist',
-        isActive: false,
-        applicationCount: 12,
-        responseRate: 25,
-        interviewRate: 8,
-        offerRate: 1,
-        description: 'Kubernetes and cloud infrastructure focus',
-      },
-      {
-        id: '5',
-        name: 'Product Specialist',
-        title: 'Senior Product Manager',
-        isActive: false,
-        applicationCount: 8,
-        responseRate: 20,
-        interviewRate: 4,
-        offerRate: 0,
-        description: 'Targeting product management positions',
-      },
-    ],
+    queryFn: async () => [],
   })
 
   // Fetch performance comparison data
   const { data: comparisonData } = useQuery({
     queryKey: ['personas-comparison'],
-    queryFn: async () => [
-      { name: 'Frontend Pro', responseRate: 32, interviewRate: 18, offerRate: 5 },
-      { name: 'Full Stack Master', responseRate: 25, interviewRate: 14, offerRate: 3 },
-      { name: 'Backend Specialist', responseRate: 36, interviewRate: 16, offerRate: 4 },
-      { name: 'DevOps Engineer', responseRate: 25, interviewRate: 8, offerRate: 1 },
-      { name: 'Product Specialist', responseRate: 20, interviewRate: 4, offerRate: 0 },
-    ],
+    queryFn: async () => [],
   })
 
   const handleCreatePersona = () => {

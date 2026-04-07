@@ -57,57 +57,15 @@ const PersonaDetail = () => {
   // Fetch persona details
   const { data: persona } = useQuery<PersonaDetailData>({
     queryKey: ['persona-detail', id],
-    queryFn: async () => ({
-      id: '1',
-      name: 'Frontend Pro',
-      title: 'Senior React Developer',
-      summary: 'Targeting senior-level frontend engineering positions with strong React focus',
-      targetKeywords: ['React', 'TypeScript', 'Web Performance', 'UI/UX', 'Component Architecture'],
-      excludeKeywords: ['C++', 'Java Backend', 'DevOps'],
-      skillPriority: ['React', 'TypeScript', 'CSS/Design', 'Node.js', 'Testing'],
-      experienceRules: 'Prefer 5+ years total, 3+ React specifically',
-      sources: ['LinkedIn', 'Indeed', 'Built In'],
-      scheduleConfig: {
-        daysOfWeek: [true, true, true, true, true, false, false],
-        maxApplicationsPerDay: 5,
-      },
-      scoringRules: [
-        {
-          id: '1',
-          type: 'boost',
-          condition: 'Contains "Next.js"',
-          impact: 5,
-        },
-        {
-          id: '2',
-          type: 'boost',
-          condition: 'Salary > $150k',
-          impact: 3,
-        },
-        {
-          id: '3',
-          type: 'penalize',
-          condition: 'Requires relocation',
-          impact: -10,
-        },
-      ],
-      stats: {
-        applications: 34,
-        responses: 11,
-        interviews: 6,
-        offers: 1,
-      },
-      performanceData: [
-        { company: 'TechCorp', responseRate: 50, applications: 2 },
-        { company: 'StartupXYZ', responseRate: 67, applications: 3 },
-        { company: 'WebCo', responseRate: 33, applications: 3 },
-        { company: 'Creative Studios', responseRate: 100, applications: 1 },
-        { company: 'TechGiants', responseRate: 50, applications: 2 },
-      ],
-    }),
+    queryFn: async () => null,
   })
 
-  if (!persona) return <div>Loading...</div>
+  if (!persona) return (
+    <div className="text-center py-12 text-gray-500 dark:text-gray-400">
+      <p className="text-lg">לא קיים פרטי פרסונה</p>
+      <p className="text-sm mt-2">לא נמצאו נתונים לפרסונה זו</p>
+    </div>
+  )
 
   const handleDragStart = (skill: string) => {
     setDraggedSkill(skill)

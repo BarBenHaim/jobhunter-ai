@@ -52,16 +52,9 @@ const Settings = () => {
   const [isSaving, setIsSaving] = useState(false)
 
   const [settings, setSettings] = useState<SettingsData>({
-    apiKey: 'sk-proj-xxxxxxxxxxxxxxxxxxxxxxxxxxx',
+    apiKey: '',
     modelSelection: 'claude-3-sonnet',
-    scraperSources: [
-      { name: 'LinkedIn', enabled: true, rateLimit: 50, lastCheckedAt: new Date() },
-      { name: 'Indeed', enabled: true, rateLimit: 50, lastCheckedAt: new Date() },
-      { name: 'Built In', enabled: true, rateLimit: 30, lastCheckedAt: new Date(Date.now() - 30 * 60 * 1000) },
-      { name: 'Glassdoor', enabled: true, rateLimit: 25, lastCheckedAt: new Date(Date.now() - 2 * 60 * 60 * 1000) },
-      { name: 'AngelList', enabled: false, rateLimit: 20, lastCheckedAt: new Date(Date.now() - 24 * 60 * 60 * 1000) },
-      { name: 'TechCrunch', enabled: false, rateLimit: 15, lastCheckedAt: new Date(Date.now() - 48 * 60 * 60 * 1000) },
-    ],
+    scraperSources: [],
     scoreThresholds: {
       autoApply: 85,
       manualReview: 60,
@@ -79,7 +72,7 @@ const Settings = () => {
     systemHealth: {
       database: 'healthy',
       redis: 'healthy',
-      scraper: 'degraded',
+      scraper: 'healthy',
       lastCheck: new Date(),
     },
   })
@@ -182,6 +175,11 @@ const Settings = () => {
       {/* Scraper Sources */}
       <Card>
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Scraper Sources</h2>
+        {settings.scraperSources.length === 0 ? (
+          <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+            <p className="text-sm">לא הוגדרו מקורות סריפר</p>
+          </div>
+        ) : (
         <div className="space-y-3">
           {settings.scraperSources.map((source) => (
             <div key={source.name} className="flex items-center justify-between p-3 rounded-lg bg-gray-50 dark:bg-gray-800">
@@ -230,6 +228,7 @@ const Settings = () => {
             </div>
           ))}
         </div>
+        )}
       </Card>
 
       {/* Score Thresholds */}

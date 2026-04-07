@@ -2,6 +2,7 @@ import axios, { AxiosInstance } from 'axios';
 import * as cheerio from 'cheerio';
 import logger from '../utils/logger';
 import { companyDiscoveryService } from './company-discovery.service';
+import { costTracker } from './cost-tracker.service';
 
 // Type definitions for scraped jobs
 interface ScrapedJob {
@@ -65,6 +66,9 @@ class LightweightScraperService {
             api_key: serpApiKey,
           },
         });
+
+        // Record SerpAPI cost
+        costTracker.recordSerpApiCall();
 
         const jobResults = response.data.jobs_results || [];
         for (const job of jobResults) {
@@ -471,6 +475,10 @@ class LightweightScraperService {
       };
 
       const response = await this.axiosInstance.get(url, { params });
+
+      // Record SerpAPI cost
+      costTracker.recordSerpApiCall();
+
       const jobResults = response.data.jobs_results || [];
 
       for (const job of jobResults) {
@@ -547,6 +555,10 @@ class LightweightScraperService {
                 num: 15,
               },
             });
+
+            // Record SerpAPI cost
+            costTracker.recordSerpApiCall();
+
             results = (response.data.organic_results || []).map((r: any) => ({
               title: r.title || '',
               link: r.link || '',

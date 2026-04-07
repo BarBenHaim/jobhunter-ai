@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import {
   Menu,
@@ -17,8 +17,105 @@ import {
   BookOpen,
   Brain,
   Sparkles,
+  DollarSign,
 } from 'lucide-react'
 import { useAppStore } from '@/stores/app.store'
+
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001/api'
+
+/** Cost Tracker Widget — shows today's API spend */
+const CostTrackerWidget = () => {
+  const [costs, setCosts] = useState<{
+    anthropic: { calls: number; cost: number }
+    serpapi: { calls: number; cost: number }
+    total: number
+  } | null>(null)
+  const [expanded, setExpanded] = useState(false)
+
+  useEffect(() => {
+    const fetchCosts = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/costs/today`)
+        const data = await res.json()
+        if (data.success) setCosts(data.data)
+      } catch {
+        // silently fail
+      }
+    }
+    fetchCosts()
+    const interval = setInterval(fetchCosts, 30000) // refresh every 30s
+    return () => clearInterval(interval)
+  }, [])
+
+  if (!costs) return null
+
+  const totalDisplay = costs.total < 0.01
+    ? `$${costs.total.toFixed(4)}`
+    : `$${costs.total.toFixed(2)}`
+
+  return (
+    <div className="fixed bottom-4 left-4 z-50">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className={`flex items-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-medium shadow-lg backdrop-blur-xl transition-all duration-300 ${
+          costs.total > 1
+            ? 'bg-warning-500/90 text-white'
+            : costs.total > 0.1
+              ? 'bg-amber-100/90 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200'
+              : 'bg-white/80 text-gray-700 dark:bg-gray-800/80 dark:text-gray-300'
+        } border border-gray-200/30 dark:border-gray-700/30 hover:scale-105`}
+      >
+        <DollarSign size={16} className={costs.total > 1 ? 'text-white' : 'text-green-600 dark:text-green-400'} />
+        <span>{totalDisplay}</span>
+        <span className="text-xs opacity-60">today</span>
+      </button>
+
+      {expanded && (
+        <div className="absolute bottom-full left-0 mb-2 w-64 rounded-2xl border border-gray-200/30 bg-white/95 p-4 shadow-xl backdrop-blur-xl dark:border-gray-700/30 dark:bg-gray-800/95 animate-fade-in">
+          <h4 className="mb-3 text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+            <DollarSign size={14} />
+            API Costs Today
+          </h4>
+
+          <div className="space-y-2.5">
+            <div className="flex items-center justify-between text-sm">
+              <div className="flex items-center gap-2">
+                <div className="h-2 w-2 rounded-full bg-purple-500" />
+                <span className="text-gray-600 dark:text-gray-400">Claude AI</span>
+              </div>
+              <div className="text-right">
+                <span className="font-medium text-gray-900 dark:text-white">
+                  ${costs.anthropic.cost < 0.01 ? costs.anthropic.cost.toFixed(4) : costs.anthropic.cost.toFixed(2)}
+                </span>
+                <span className="ml-1.5 text-xs text-gray-400">({costs.anthropic.calls} calls)</span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between text-sm">
+              <div className="flex items-center gap-2">
+                <div className="h-2 w-2 rounded-full bg-blue-500" />
+                <span className="text-gray-600 dark:text-gray-400">SerpAPI</span>
+              </div>
+              <div className="text-right">
+                <span className="font-medium text-gray-900 dark:text-white">
+                  ${costs.serpapi.cost < 0.01 ? costs.serpapi.cost.toFixed(4) : costs.serpapi.cost.toFixed(2)}
+                </span>
+                <span className="ml-1.5 text-xs text-gray-400">({costs.serpapi.calls} calls)</span>
+              </div>
+            </div>
+
+            <div className="mt-2 border-t border-gray-200/50 pt-2 dark:border-gray-700/50">
+              <div className="flex items-center justify-between text-sm font-semibold">
+                <span className="text-gray-700 dark:text-gray-300">Total</span>
+                <span className="text-gray-900 dark:text-white">{totalDisplay}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 const navItems = [
   { label: 'Dashboard', path: '/', icon: Home },
@@ -175,6 +272,9 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
           </div>
         ))}
       </div>
+
+      {/* Cost tracker widget */}
+      <CostTrackerWidget />
 
       {/* Mobile overlay */}
       {mobileOpen && (

@@ -70,110 +70,7 @@ const Profile = () => {
   // Fetch profile
   const { data: profile } = useQuery<ProfileData>({
     queryKey: ['profile'],
-    queryFn: async () => ({
-      id: '1',
-      rawInput: '',
-      skills: [
-        { name: 'React', proficiency: 95, frequency: 5 },
-        { name: 'TypeScript', proficiency: 90, frequency: 5 },
-        { name: 'Node.js', proficiency: 85, frequency: 4 },
-        { name: 'CSS/Tailwind', proficiency: 88, frequency: 5 },
-        { name: 'PostgreSQL', proficiency: 75, frequency: 3 },
-        { name: 'Docker', proficiency: 70, frequency: 2 },
-        { name: 'AWS', proficiency: 65, frequency: 2 },
-        { name: 'Python', proficiency: 60, frequency: 1 },
-      ],
-      experience: [
-        {
-          id: '1',
-          title: 'Senior Frontend Engineer',
-          company: 'TechCorp Inc',
-          duration: '2021 - Present',
-          description: 'Led development of customer-facing dashboard serving 100k+ users. Improved application performance by 40% through code optimization.',
-        },
-        {
-          id: '2',
-          title: 'Full Stack Developer',
-          company: 'WebCo',
-          duration: '2018 - 2021',
-          description: 'Developed and maintained 5 production React applications. Implemented CI/CD pipelines reducing deployment time by 50%.',
-        },
-        {
-          id: '3',
-          title: 'Junior Developer',
-          company: 'StartupXYZ',
-          duration: '2017 - 2018',
-          description: 'Built responsive web interfaces using React and maintained backend APIs with Node.js and Express.',
-        },
-      ],
-      projects: [
-        {
-          id: '1',
-          name: 'JobHunter AI',
-          description: 'AI-powered job application automation platform. Built with React, Node.js, TypeScript, and PostgreSQL.',
-          technologies: ['React', 'TypeScript', 'Node.js', 'PostgreSQL', 'Tailwind CSS'],
-          link: 'https://github.com/example/jobhunter-ai',
-        },
-        {
-          id: '2',
-          name: 'E-Commerce Platform',
-          description: 'Full-stack e-commerce solution with payment integration and real-time inventory management.',
-          technologies: ['Next.js', 'React', 'Stripe', 'MongoDB', 'AWS'],
-          link: 'https://github.com/example/ecommerce',
-        },
-        {
-          id: '3',
-          name: 'Data Visualization Dashboard',
-          description: 'Interactive dashboard for business analytics with real-time data updates.',
-          technologies: ['React', 'D3.js', 'WebSockets', 'Node.js'],
-          link: 'https://github.com/example/dashboard',
-        },
-      ],
-      education: [
-        {
-          id: '1',
-          school: 'State University',
-          degree: 'Bachelor of Science',
-          field: 'Computer Science',
-          year: '2017',
-        },
-        {
-          id: '2',
-          school: 'Online Academy',
-          degree: 'Certificate',
-          field: 'Advanced React Patterns',
-          year: '2022',
-        },
-      ],
-      certifications: [
-        {
-          id: '1',
-          name: 'AWS Certified Solutions Architect',
-          issuer: 'Amazon Web Services',
-          year: '2022',
-        },
-        {
-          id: '2',
-          name: 'Certified Kubernetes Administrator',
-          issuer: 'Linux Foundation',
-          year: '2023',
-        },
-      ],
-      languages: [
-        { name: 'English', proficiency: 'native' },
-        { name: 'Spanish', proficiency: 'intermediate' },
-        { name: 'Mandarin', proficiency: 'beginner' },
-      ],
-      gapAnalysis: {
-        missingSkills: ['Go', 'Rust', 'GraphQL', 'Kubernetes'],
-        areasForImprovement: ['System Design', 'ML/Data Science', 'Mobile Development'],
-        recommendations: [
-          'Consider learning GraphQL to complement REST API skills',
-          'Explore DevOps tools to strengthen infrastructure knowledge',
-          'Take a course in system design for senior-level interviews',
-        ],
-      },
-    }),
+    queryFn: async () => null,
   })
 
   const handleProcessInput = async () => {
@@ -203,6 +100,60 @@ const Profile = () => {
       case 'native':
         return 'Native'
     }
+  }
+
+  if (!profile) {
+    return (
+      <div className="max-w-2xl mx-auto space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Create Your Profile</h1>
+          <p className="text-gray-600 dark:text-gray-400 mt-2">
+            Share your professional background. Our AI will extract and organize your information.
+          </p>
+        </div>
+
+        {/* Text Input */}
+        <Card>
+          <label className="block text-sm font-semibold text-gray-900 dark:text-white mb-3">
+            Paste your professional background
+          </label>
+          <textarea
+            value={rawInput}
+            onChange={(e) => setRawInput(e.target.value)}
+            placeholder="Share your work experience, skills, education, projects, and achievements. Feel free to paste from your CV or write freely."
+            className="w-full rounded-lg border border-gray-300 px-4 py-3 dark:border-gray-700 dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-primary-500"
+            rows={12}
+          />
+          <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">
+            The more detail you provide, the better our AI can tailor your applications.
+          </p>
+        </Card>
+
+        {/* File Upload */}
+        <Card>
+          <div className="text-center">
+            <div className="rounded-lg bg-gray-100 p-8 dark:bg-gray-800">
+              <Upload className="mx-auto mb-3 text-gray-400" size={32} />
+              <p className="text-sm font-medium text-gray-900 dark:text-white">Or upload your CV</p>
+              <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">PDF, DOCX, or TXT</p>
+              <button className="mt-4 rounded-lg bg-primary-600 px-4 py-2 text-white hover:bg-primary-700 font-medium">
+                Choose File
+              </button>
+            </div>
+          </div>
+        </Card>
+
+        {/* Process Button */}
+        <button
+          onClick={handleProcessInput}
+          disabled={!rawInput.trim() || isProcessing}
+          className="w-full rounded-lg bg-primary-600 px-4 py-3 text-white hover:bg-primary-700 disabled:opacity-50 font-semibold flex items-center justify-center gap-2 transition-all"
+        >
+          <Wand2 size={20} />
+          {isProcessing ? 'Processing...' : 'Process with AI'}
+        </button>
+      </div>
+    )
   }
 
   if (activeView === 'input') {

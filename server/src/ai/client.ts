@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import logger from '../utils/logger';
 import { AIError } from '../utils/errors';
+import { costTracker } from '../services/cost-tracker.service';
 
 /**
  * AI Client - Anthropic Claude API integration
@@ -145,11 +146,17 @@ export class AIClient {
 
           clearTimeout(timeoutId);
 
-          // Track token usage
+          // Track token usage and record cost
           if (response.usage) {
             this.tokenUsage.inputTokens += response.usage.input_tokens;
             this.tokenUsage.outputTokens += response.usage.output_tokens;
             this.tokenUsage.totalTokens += response.usage.input_tokens + response.usage.output_tokens;
+
+            // Record API call cost
+            costTracker.recordAnthropicCall(
+              response.usage.input_tokens,
+              response.usage.output_tokens
+            );
           }
 
           // Extract text from response

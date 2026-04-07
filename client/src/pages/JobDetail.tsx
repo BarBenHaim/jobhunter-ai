@@ -33,151 +33,16 @@ const JobDetail = () => {
   // Fetch job details
   const { data: job } = useQuery<JobDetailData>({
     queryKey: ['job-detail', id],
-    queryFn: async () => ({
-      id: '1',
-      title: 'Senior React Developer',
-      company: 'TechCorp Inc',
-      description: `We are looking for an experienced Senior React Developer to join our growing team.
-
-## About the Role
-You will be responsible for building and maintaining our customer-facing web applications using React and modern web technologies. You'll work with a team of talented engineers to deliver high-quality, scalable solutions.
-
-## Responsibilities
-- Design and implement responsive user interfaces using React
-- Optimize application performance and user experience
-- Collaborate with product and design teams to bring new features to life
-- Mentor junior developers and conduct code reviews
-- Participate in technical discussions and architecture decisions
-- Contribute to testing and quality assurance processes
-
-## Requirements
-- 5+ years of experience with React and JavaScript/TypeScript
-- Strong understanding of web fundamentals (HTML, CSS, HTTP)
-- Experience with state management libraries (Redux, Zustand, etc.)
-- Familiarity with modern development tools and CI/CD pipelines
-- Excellent problem-solving and communication skills
-- Bachelor's degree in Computer Science or related field
-
-## Nice to Have
-- Experience with Next.js or other React frameworks
-- Knowledge of GraphQL
-- Open-source contributions
-- Experience with design systems
-- Knowledge of accessibility standards (WCAG)
-
-## Benefits
-- Competitive salary and equity package
-- Health, dental, and vision insurance
-- 401(k) matching
-- Remote work options
-- Professional development budget
-- Flexible work hours`,
-      source: 'linkedin',
-      sourceUrl: 'https://linkedin.com/jobs/view/1234',
-      location: 'San Francisco, CA',
-      locationType: 'hybrid',
-      salary: { min: 150000, max: 180000, currency: 'USD' },
-      requirements: ['React', 'TypeScript', 'Node.js', 'CSS', 'Web Performance'],
-      tags: ['frontend', 'senior', 'react'],
-      postedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
-      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-      views: 245,
-      isActive: true,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      score: {
-        id: '1',
-        jobId: '1',
-        personaId: '1',
-        overallScore: 92,
-        recommendation: 'strong_pass' as Recommendation,
-        roleMatch: 95,
-        skillMatch: 90,
-        companyMatch: 88,
-        compensationMatch: 92,
-        locationMatch: 85,
-        reasoning: 'Excellent match for your profile. Your React expertise aligns perfectly with their needs, and the compensation is very competitive.',
-        strengths: [
-          'Perfect role match with 6 years React experience',
-          'Salary range exceeds your minimum requirements',
-          'Hybrid work setup matches your preferences',
-          'Strong company with great reviews',
-        ],
-        gaps: [
-          'They prefer 5+ years, you have 6 - well-aligned',
-        ],
-        improvementSuggestions: [
-          'Highlight your performance optimization experience',
-          'Emphasize leadership and mentoring capabilities',
-        ],
-        scoredAt: new Date(),
-      },
-      application: {
-        id: '1',
-        jobId: '1',
-        personaId: '1',
-        userId: '1',
-        status: 'submitted',
-        cvId: '1',
-        submittedAt: new Date(Date.now() - 5 * 60 * 60 * 1000),
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      },
-      generatedCV: {
-        id: '1',
-        userId: '1',
-        personaId: '1',
-        name: 'React Developer CV',
-        content: 'John Doe\nSenior React Developer\n\nExperience:\n- 6 years of React development\n- Led team of 3 developers\n- Improved performance by 40%\n\nSkills: React, TypeScript, Node.js...',
-        format: 'pdf',
-        isTemplate: false,
-        atsScore: 92,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      },
-      similarJobs: [
-        {
-          id: '2',
-          title: 'Full Stack Engineer',
-          company: 'StartupXYZ',
-          description: 'Join our growing team...',
-          source: 'indeed',
-          sourceUrl: 'https://indeed.com',
-          location: 'New York, NY',
-          locationType: 'remote',
-          salary: { min: 120000, max: 150000, currency: 'USD' },
-          requirements: ['JavaScript', 'React', 'Python'],
-          tags: ['fullstack', 'startup'],
-          postedAt: new Date(),
-          views: 512,
-          isActive: true,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
-        {
-          id: '3',
-          title: 'Frontend Engineer',
-          company: 'Creative Studios',
-          description: 'Build amazing UX...',
-          source: 'builtin',
-          sourceUrl: 'https://builtin.com',
-          location: 'Austin, TX',
-          locationType: 'onsite',
-          salary: { min: 110000, max: 140000, currency: 'USD' },
-          requirements: ['React', 'CSS', 'Design'],
-          tags: ['frontend', 'design'],
-          postedAt: new Date(),
-          views: 89,
-          isActive: true,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
-      ],
-    }),
+    queryFn: async () => null,
   })
 
   if (!job) {
-    return <div className="text-center py-12">Loading job details...</div>
+    return (
+      <div className="text-center py-12 text-gray-500 dark:text-gray-400">
+        <p className="text-lg">לא נמצאה משרה</p>
+        <p className="text-sm mt-2">לא ניתן לטעון את הנתונים של משרה זו</p>
+      </div>
+    )
   }
 
   const scoreRadarData = job.score
