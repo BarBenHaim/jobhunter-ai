@@ -6,6 +6,7 @@ import { useSocket } from '@/hooks/useSocket'
 import { useToast } from '@/hooks/useToast'
 import { profileApi } from '@/services/profile.api'
 import { settingsApi } from '@/services/settings.api'
+import { setAuthToken } from '@/services/api'
 import { Layout } from '@/components/common/Layout'
 import { CommandPalette } from '@/components/common/CommandPalette'
 import { Loading } from '@/components/common/Loading'
@@ -87,29 +88,22 @@ export default function App() {
     }
   }, [token, success, error])
 
-  // Demo mode login handler
-  const handleDemoLogin = () => {
-    // Set a demo token so the app proceeds past login
+  // Login handler — connects to the real backend and gets a real JWT token
+  const handleDemoLogin = async () => {
+    try {
+      const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:3001/api'
+      const res = await fetch(`${apiBase}/auth/demo-login`, { method: 'POST' })
+      const data = await res.json()
+      if (data.success && data.token) {
+        setAuthToken(data.token)
+        window.location.reload()
+        return
+      }
+    } catch (e) {
+      console.warn('Backend not available, falling back to demo mode', e)
+    }
+    // Fallback: offline demo mode (no backend)
     localStorage.setItem('token', 'demo-token')
-    // Set demo user in store
-    setUser({
-      id: 'demo-user',
-      fullName: 'Demo User',
-      email: 'demo@jobhunter.ai',
-      phone: '',
-      location: 'Tel Aviv, Israel',
-      linkedinUrl: '',
-      githubUrl: '',
-      portfolioUrl: '',
-      summary: 'Full-stack developer with 5+ years of experience',
-      skills: ['React', 'TypeScript', 'Node.js', 'Python', 'PostgreSQL'],
-      experience: [],
-      education: [],
-      languages: ['English', 'Hebrew'],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    } as any)
-    // Force re-render
     window.location.reload()
   }
 

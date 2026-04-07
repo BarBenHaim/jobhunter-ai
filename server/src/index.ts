@@ -5,10 +5,11 @@ import rateLimit from 'express-rate-limit';
 import { Server as SocketIOServer } from 'socket.io';
 import http from 'http';
 import dotenv from 'dotenv';
+import bcrypt from 'bcryptjs';
 import logger from './utils/logger';
 import prisma from './db/prisma';
 import { errorHandler, asyncHandler } from './middleware/errorHandler';
-import { authMiddleware, AuthRequest } from './middleware/auth';
+import { authMiddleware, AuthRequest, generateToken } from './middleware/auth';
 import { startCronJobs, stopCronJobs } from './cron';
 import config from './config';
 import { initializeQueueProcessors, closeQueues } from './queue';
@@ -95,32 +96,80 @@ app.get('/health', (req: Request, res: Response) => {
   });
 });
 
+// Demo login — finds or creates the single user profile, returns a real JWT
+app.post('/api/auth/demo-login', authLimiter, asyncHandler(async (req: Request, res: Response) => {
+  let profile = await prisma.userProfile.findFirst();
+  if (!profile) {
+    profile = await prisma.userProfile.create({
+      data: {
+        fullName: 'Job Hunter',
+        email: 'user@jobhunter.ai',
+        location: 'Israel',
+        structuredProfile: {},
+        rawKnowledge: {},
+        preferences: {},
+      },
+    });
+    logger.info('Created default user profile', { id: profile.id });
+  }
+  const token = generateToken(profile.id);
+  logger.info('Demo login', { userId: profile.id });
+  res.json({ success: true, token, user: profile });
+}));
+
 app.post('/api/auth/login', authLimiter, asyncHandler(async (req: Request, res: Response) => {
   const { email, password } = req.body;
 
   if (!email || !password) {
-    res.status(400).json({ error: 'Email and password are required' });
+    res.status(400).json({ success: false, error: 'Email and password are required' });
     return;
   }
 
-  res.status(200).json({
-    message: 'Auth endpoint ready',
-    email,
-  });
+  const profile = await prisma.userProfile.findUnique({ where: { email } });
+  if (!profile || !(profile as any).passwordHash) {
+    res.status(401).json({ success: false, error: 'Invalid email or password' });
+    return;
+  }
+
+  const valid = await bcrypt.compare(password, (profile as any).passwordHash);
+  if (!valid) {
+    res.status(401).json({ success: false, error: 'Invalid email or password' });
+    return;
+  }
+
+  const token = generateToken(profile.id);
+  res.json({ success: true, token, user: profile });
 }));
 
 app.post('/api/auth/register', authLimiter, asyncHandler(async (req: Request, res: Response) => {
   const { email, password, fullName } = req.body;
 
   if (!email || !password || !fullName) {
-    res.status(400).json({ error: 'Email, password, and full name are required' });
+    res.status(400).json({ success: false, error: 'Email, password, and full name are required' });
     return;
   }
 
-  res.status(201).json({
-    message: 'Registration endpoint ready',
-    email,
+  const existing = await prisma.userProfile.findUnique({ where: { email } });
+  if (existing) {
+    res.status(409).json({ success: false, error: 'Email already registered' });
+    return;
+  }
+
+  const passwordHash = await bcrypt.hash(password, 12);
+  const profile = await prisma.userProfile.create({
+    data: {
+      email,
+      fullName,
+      passwordHash,
+      structuredProfile: {},
+      rawKnowledge: {},
+      preferences: {},
+    } as any,
   });
+
+  const token = generateToken(profile.id);
+  logger.info('User registered', { userId: profile.id, email });
+  res.status(201).json({ success: true, token, user: profile });
 }));
 
 app.use('/api/profile', profileRoutes);

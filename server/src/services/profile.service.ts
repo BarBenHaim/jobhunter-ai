@@ -6,7 +6,7 @@ import { aiClient } from '../ai/client';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import mammoth from 'mammoth';
-import * as pdfLib from 'pdf-lib';
+import pdfParse from 'pdf-parse';
 
 export class ProfileService {
   async getProfile(userId: string) {
@@ -149,7 +149,7 @@ export class ProfileService {
     try {
       logger.info(`Uploading CV for user: ${userId}`, { filePath });
 
-      if (!fs.statSync(filePath)) {
+      if (!fs.existsSync(filePath)) {
         throw new ValidationError(`File not found: ${filePath}`);
       }
 
@@ -162,13 +162,8 @@ export class ProfileService {
         extractedText = result.value;
       } else if (extension === '.pdf') {
         const fileBuffer = await fs.readFile(filePath);
-        const pdfDoc = await pdfLib.PDFDocument.load(fileBuffer);
-        const pages = pdfDoc.getPages();
-
-        for (const page of pages) {
-          const text = page.getTextContent?.() || '';
-          extractedText += text;
-        }
+        const pdfData = await pdfParse(fileBuffer);
+        extractedText = pdfData.text;
       } else {
         throw new ValidationError('Unsupported file format. Please use .pdf or .docx');
       }
