@@ -157,17 +157,30 @@ export class JobService {
         return existingJob;
       }
 
+      // Normalize enum values to match Prisma schema
+      const validSources = ['LINKEDIN', 'INDEED', 'ALLJOBS', 'DRUSHIM', 'FACEBOOK_GROUP', 'WELLFOUND', 'COMPANY_CAREER_PAGE', 'GOOGLE_JOBS', 'GLASSDOOR', 'OTHER'];
+      const normalizedSource = validSources.includes(data.source?.toUpperCase())
+        ? data.source.toUpperCase()
+        : 'OTHER';
+
+      const locationTypeMap: Record<string, string> = {
+        remote: 'REMOTE', hybrid: 'HYBRID', onsite: 'ONSITE', 'on-site': 'ONSITE',
+        fulltime: 'ONSITE', 'full-time': 'ONSITE',
+        REMOTE: 'REMOTE', HYBRID: 'HYBRID', ONSITE: 'ONSITE',
+      };
+      const normalizedLocationType = locationTypeMap[data.locationType || 'hybrid'] || 'HYBRID';
+
       const job = await prisma.job.create({
         data: {
           externalId: data.externalId,
-          source: data.source as any,
-          sourceUrl: data.sourceUrl,
+          source: normalizedSource as any,
+          sourceUrl: data.sourceUrl || '',
           title: data.title,
           company: data.company,
           companyUrl: data.companyUrl,
           location: data.location,
-          locationType: data.locationType as any,
-          description: data.description,
+          locationType: normalizedLocationType as any,
+          description: data.description || '',
           requirements: data.requirements,
           salary: data.salary || {},
           experienceLevel: data.experienceLevel,
