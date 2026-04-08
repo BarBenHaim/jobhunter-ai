@@ -239,6 +239,33 @@ export class JobService {
     }
   }
 
+  /**
+   * Update job rawData with smart score metadata
+   */
+  async updateJobMetadata(jobId: string, metadata: Record<string, any>) {
+    try {
+      const job = await prisma.job.findUnique({ where: { id: jobId } });
+      if (!job) return;
+
+      const existingRawData = typeof job.rawData === 'object' && job.rawData !== null
+        ? job.rawData as Record<string, any>
+        : {};
+
+      await prisma.job.update({
+        where: { id: jobId },
+        data: {
+          rawData: {
+            ...existingRawData,
+            ...metadata,
+          },
+        },
+      });
+    } catch (error) {
+      logger.error('Error updating job metadata:', error);
+      // Non-critical — don't throw
+    }
+  }
+
   async deduplicateJob(jobData: JobData): Promise<boolean> {
     try {
       logger.info(`Checking job duplication`, { company: jobData.company });

@@ -2,6 +2,9 @@ import { Router, Request, Response } from 'express'
 import { lightweightScraperService } from '../services/lightweight-scraper.service'
 import { companyDiscoveryService } from '../services/company-discovery.service'
 import { jobService } from '../services/job.service'
+import { profileService } from '../services/profile.service'
+import { smartMatchService, analyzeProfileForScoring, scoreJobLocally } from '../services/smart-match.service'
+import { authMiddleware, AuthRequest } from '../middleware/auth'
 import logger from '../utils/logger'
 
 const router = Router()
@@ -47,6 +50,210 @@ function isTechRelevant(title: string): boolean {
   }
   return true
 }
+
+// POST /api/scrape/smart-trigger - AI-powered smart scrape with profile analysis
+// Thinks like a recruiter: expands keywords, scrapes, scores locally
+router.post('/smart-trigger', authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.userId
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Authentication required' })
+    }
+
+    logger.info('Smart scrape triggered', { userId })
+
+    // Step 1: Fetch user profile
+    let profile: any
+    try {
+      profile = await profileService.getProfile(userId)
+    } catch (err) {
+      logger.warn('Could not fetch profile for smart scrape, falling back to basic', { userId })
+      return res.status(400).json({
+        success: false,
+        error: 'Profile not found. Please complete your profile first.',
+      })
+    }
+
+    const structuredProfile = profile.structuredProfile || {}
+    const rawKnowledge = profile.rawKnowledge || {}
+    const preferences = profile.preferences || {}
+
+    // Step 2: Generate smart keywords using AI
+    let smartKeywords: any
+    try {
+      smartKeywords = await smartMatchService.generateSmartKeywords(
+        structuredProfile,
+        rawKnowledge,
+        preferences
+      )
+      logger.info('Smart keywords generated', {
+        combined: smartKeywords.combined?.length,
+        primary: smartKeywords.primary?.length,
+        adjacent: smartKeywords.adjacent?.length,
+      })
+    } catch (err) {
+      logger.error('Smart keyword generation failed, using fallback', err)
+      const targetRoles = preferences?.targetRoles || []
+      smartKeywords = {
+        combined: targetRoles.length > 0
+          ? [...targetRoles, 'מפתח תוכנה', 'Software Engineer']
+          : DEFAULT_KEYWORDS,
+      }
+    }
+
+    // Step 3: Use combined keywords for scraping (these are optimized for job boards)
+    const keywordsToUse = smartKeywords.combined?.length > 0
+      ? smartKeywords.combined
+      : DEFAULT_KEYWORDS
+
+    // Limit to top 12 keywords to avoid excessive scraping
+    const topKeywords = keywordsToUse.slice(0, 12)
+
+    const location = preferences?.preferredLocations?.[0] || req.body.location || 'Israel'
+
+    logger.info('Smart scraping with keywords', { keywords: topKeywords, location })
+
+    // Step 4: Scrape with smart keywords
+    const allJobs: any[] = []
+    const sourceBreakdown: Record<string, number> = {}
+
+    for (const keyword of topKeywords) {
+      try {
+        const results = await lightweightScraperService.scrapeAll([keyword], location)
+        for (const result of results) {
+          if (result.jobs?.length > 0) {
+            allJobs.push(...result.jobs)
+            sourceBreakdown[result.source] = (sourceBreakdown[result.source] || 0) + result.jobs.length
+          }
+        }
+      } catch (err) {
+        logger.error(`Error scraping keyword "${keyword}":`, err)
+      }
+    }
+
+    // Step 5: Filter irrelevant jobs
+    const relevantJobs = allJobs.filter(job => isTechRelevant(job.title))
+    const filtered = allJobs.length - relevantJobs.length
+    if (filtered > 0) {
+      logger.info(`Filtered out ${filtered} irrelevant jobs`)
+    }
+
+    // Step 6: Analyze profile for local scoring (one-time)
+    const profileAnalysis = analyzeProfileForScoring(structuredProfile, rawKnowledge, preferences)
+
+    // Step 7: Save jobs and score them locally
+    let saved = 0
+    let duplicates = 0
+    const jobsCreated: any[] = []
+    const scoredJobs: any[] = []
+
+    for (const job of relevantJobs) {
+      try {
+        const created = await jobService.createJob(job)
+        if (created) {
+          saved++
+
+          // Score locally — instant, no API call
+          const smartScore = scoreJobLocally(
+            {
+              title: created.title,
+              company: created.company,
+              description: created.description || '',
+              requirements: (created as any).requirements || '',
+              location: created.location || '',
+              experienceLevel: (created as any).experienceLevel || '',
+            },
+            profileAnalysis,
+            preferences
+          )
+
+          const jobWithScore = {
+            id: created.id,
+            title: created.title,
+            company: created.company,
+            source: created.source,
+            smartScore: smartScore.score,
+            category: smartScore.category,
+            reasoning: smartScore.reasoning,
+          }
+
+          jobsCreated.push(jobWithScore)
+
+          // Store smart score in job metadata
+          try {
+            await jobService.updateJobMetadata(created.id, {
+              smartScore: smartScore.score,
+              smartCategory: smartScore.category,
+              smartReasoning: smartScore.reasoning,
+              matchedSkills: smartScore.matchedSkills,
+              missingSkills: smartScore.missingSkills,
+              greenFlags: smartScore.greenFlags,
+              redFlags: smartScore.redFlags,
+              skillMatch: smartScore.skillMatch,
+              experienceMatch: smartScore.experienceMatch,
+              roleRelevance: smartScore.roleRelevance,
+              scoredAt: new Date().toISOString(),
+            })
+          } catch (metaErr) {
+            logger.warn('Could not save smart score metadata', { jobId: created.id })
+          }
+        }
+      } catch (err: any) {
+        if (err?.code === 'P2002' || err?.message?.includes('already exists')) {
+          duplicates++
+        } else {
+          logger.error('Error saving job:', err)
+        }
+      }
+    }
+
+    // Sort created jobs by smart score
+    jobsCreated.sort((a, b) => (b.smartScore || 0) - (a.smartScore || 0))
+
+    logger.info('Smart scrape completed', {
+      total: allJobs.length,
+      relevant: relevantJobs.length,
+      saved,
+      duplicates,
+      avgScore: jobsCreated.length > 0
+        ? Math.round(jobsCreated.reduce((sum, j) => sum + (j.smartScore || 0), 0) / jobsCreated.length)
+        : 0,
+    })
+
+    res.json({
+      success: true,
+      message: `חיפוש חכם הושלם: ${saved} משרות רלוונטיות נמצאו`,
+      data: {
+        totalJobsCreated: saved,
+        totalScraped: allJobs.length,
+        totalFiltered: filtered,
+        duplicates,
+        jobsCreated: jobsCreated.slice(0, 30),
+        sourceBreakdown: Object.entries(sourceBreakdown).map(([source, count]) => ({
+          source,
+          scrapedCount: count,
+          timestamp: new Date(),
+        })),
+        keywords: topKeywords,
+        smartKeywords: {
+          primary: smartKeywords.primary?.slice(0, 5),
+          adjacent: smartKeywords.adjacent?.slice(0, 5),
+          hebrew: smartKeywords.hebrew?.slice(0, 5),
+        },
+        location,
+        profileAnalysis: {
+          seniorityLevel: profileAnalysis.seniorityLevel,
+          experienceYears: profileAnalysis.experienceYears,
+          coreSkillsCount: profileAnalysis.coreSkills.length,
+          domainsDetected: profileAnalysis.domains,
+        },
+      },
+    })
+  } catch (error) {
+    logger.error('Smart scrape trigger error:', error)
+    res.status(500).json({ success: false, error: 'Smart scrape failed' })
+  }
+})
 
 // POST /api/scrape/trigger - Trigger a full scrape across all sources
 router.post('/trigger', async (req: Request, res: Response) => {

@@ -99,10 +99,13 @@ const Dashboard = () => {
     return 'Israel'
   }, [profile])
 
-  // Trigger scrape mutation
+  // Trigger SMART scrape mutation — AI-powered keyword expansion + local scoring
   const scrapeMutation = useMutation({
     mutationFn: () =>
-      scrapeApi.triggerScrape(scrapeKeywords, scrapeLocation),
+      scrapeApi.smartTriggerScrape(scrapeLocation).catch(() =>
+        // Fallback to basic scrape if smart trigger fails (e.g. no auth, no profile)
+        scrapeApi.triggerScrape(scrapeKeywords, scrapeLocation)
+      ),
     onSuccess: (res) => {
       setScrapeMessage(`${res.data.totalJobsCreated} new jobs found!`)
       queryClient.invalidateQueries({ queryKey: ['scrape-status'] })

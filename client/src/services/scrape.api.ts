@@ -2,6 +2,18 @@ import apiClient from './api'
 import { ScrapeSource, ScrapeStatus, ScrapeTriggerResult } from '@/types'
 
 export const scrapeApi = {
+  /**
+   * Smart scrape — AI analyzes user profile, generates smart keywords,
+   * scrapes with expanded terms, and scores every job locally.
+   * Requires authentication.
+   */
+  async smartTriggerScrape(
+    location?: string
+  ): Promise<{ success: boolean; message: string; data: any }> {
+    const { data } = await apiClient.post('/scrape/smart-trigger', { location })
+    return data
+  },
+
   async triggerScrape(
     keywords: string[] = ['React', 'Full Stack', 'Node.js', 'TypeScript', 'פיתוח', 'הייטק'],
     location: string = 'Israel'

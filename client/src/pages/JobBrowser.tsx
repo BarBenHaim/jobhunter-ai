@@ -35,9 +35,48 @@ const SOURCE_DISPLAY: Record<string, { label: string; color: 'primary' | 'succes
   OTHER: { label: 'Other', color: 'gray' },
 }
 
-/** Estimate a rough match score based on profile keywords vs job data */
-const estimateMatch = (job: any): number => {
-  // Simple heuristic — in production this would come from the AI scoring system
+/** Get the smart match score — prefers AI smart score, falls back to AI scoring, then heuristic */
+const getSmartScore = (job: any): {
+  score: number;
+  category: string;
+  reasoning: string;
+  matchedSkills: string[];
+  missingSkills: string[];
+  greenFlags: string[];
+  redFlags: string[];
+  hasSmartScore: boolean;
+} => {
+  // Priority 1: Smart local score from rawData (set by smart-trigger)
+  const rawData = job.rawData || {}
+  if (rawData.smartScore != null) {
+    return {
+      score: rawData.smartScore,
+      category: rawData.smartCategory || 'UNKNOWN',
+      reasoning: rawData.smartReasoning || '',
+      matchedSkills: rawData.matchedSkills || [],
+      missingSkills: rawData.missingSkills || [],
+      greenFlags: rawData.greenFlags || [],
+      redFlags: rawData.redFlags || [],
+      hasSmartScore: true,
+    }
+  }
+
+  // Priority 2: AI scoring (from JobScore model)
+  if (job.scores?.length > 0) {
+    const s = job.scores[0]
+    return {
+      score: Math.round(s.overallScore),
+      category: s.recommendation || 'UNKNOWN',
+      reasoning: s.reasoning || '',
+      matchedSkills: s.matchedSkills || [],
+      missingSkills: s.missingSkills || [],
+      greenFlags: [],
+      redFlags: s.redFlags || [],
+      hasSmartScore: false,
+    }
+  }
+
+  // Priority 3: Simple heuristic fallback
   const desc = (job.description || '').toLowerCase()
   const title = (job.title || '').toLowerCase()
   const techKeywords = ['react', 'node', 'typescript', 'javascript', 'python', 'full stack', 'frontend', 'backend', 'aws', 'docker']
@@ -45,11 +84,31 @@ const estimateMatch = (job: any): number => {
   for (const kw of techKeywords) {
     if (desc.includes(kw) || title.includes(kw)) hits++
   }
-  // Score from real AI if available
-  if (job.scores?.length > 0) {
-    return Math.round(job.scores[0].overallScore * 10) || 50
+  return {
+    score: Math.min(95, 40 + hits * 6),
+    category: 'UNSCORED',
+    reasoning: '',
+    matchedSkills: [],
+    missingSkills: [],
+    greenFlags: [],
+    redFlags: [],
+    hasSmartScore: false,
   }
-  return Math.min(95, 40 + hits * 6)
+}
+
+const CATEGORY_LABELS: Record<string, { label: string; color: string }> = {
+  PERFECT: { label: 'מושלם', color: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' },
+  STRONG: { label: 'חזק', color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400' },
+  GOOD: { label: 'טוב', color: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-400' },
+  POSSIBLE: { label: 'אפשרי', color: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400' },
+  STRETCH: { label: 'מאתגר', color: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400' },
+  WEAK: { label: 'נמוך', color: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400' },
+  STRONG_FIT: { label: 'חזק', color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400' },
+  GOOD_FIT: { label: 'טוב', color: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-400' },
+  MODERATE: { label: 'בינוני', color: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400' },
+  POOR_FIT: { label: 'נמוך', color: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400' },
+  UNSCORED: { label: '', color: '' },
+  UNKNOWN: { label: '', color: '' },
 }
 
 const JobBrowser = () => {
@@ -59,6 +118,7 @@ const JobBrowser = () => {
   const [searchInput, setSearchInput] = useState('')
   const [locationInput, setLocationInput] = useState('')
   const [advancedOpen, setAdvancedOpen] = useState(false)
+  const [sortByMatch, setSortByMatch] = useState(false)
   const [filters, setFilters] = useState<JobFilters>({
     sort: 'createdAt',
     order: 'desc',
@@ -100,7 +160,15 @@ const JobBrowser = () => {
     },
   })
 
-  const jobs: Job[] = jobsResponse?.data || []
+  const rawJobs: Job[] = jobsResponse?.data || []
+  // Client-side sort by smart score if enabled
+  const jobs = sortByMatch
+    ? [...rawJobs].sort((a: any, b: any) => {
+        const aScore = a.rawData?.smartScore ?? (a.scores?.[0]?.overallScore ?? 0)
+        const bScore = b.rawData?.smartScore ?? (b.scores?.[0]?.overallScore ?? 0)
+        return bScore - aScore
+      })
+    : rawJobs
   const meta = jobsResponse?.meta || { total: 0, page: 1, limit: 20, pages: 1, hasMore: false }
 
   const formatDate = (date: string | Date | undefined) => {
@@ -220,12 +288,26 @@ const JobBrowser = () => {
           <option value="30d">חודש אחרון</option>
         </select>
 
+        {/* Sort by match toggle */}
+        <button
+          onClick={() => setSortByMatch(!sortByMatch)}
+          className={`px-3 py-2 rounded-xl border text-sm font-medium transition-all ${
+            sortByMatch
+              ? 'border-primary-400 bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-400 dark:border-primary-600'
+              : 'border-gray-200 bg-white text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400'
+          }`}
+        >
+          <Target size={14} className="inline ml-1" />
+          מיון לפי התאמה
+        </button>
+
         {(filters.source || filters.locationType || filters.experienceLevel || filters.datePosted || filters.location) && (
           <button
             onClick={() => {
               setFilters({ sort: 'createdAt', order: 'desc' })
               setLocationInput('')
               setSearchInput('')
+              setSortByMatch(false)
               setPage(1)
             }}
             className="px-3 py-2 text-sm text-red-500 hover:text-red-600 font-medium"
@@ -250,7 +332,9 @@ const JobBrowser = () => {
               const sourceBadge = SOURCE_DISPLAY[job.source] || { label: job.source, color: 'gray' as const }
               const salary = formatSalary(job.salary)
               const isExpanded = expandedJob === job.id
-              const matchScore = estimateMatch(job)
+              const smartData = getSmartScore(job)
+              const matchScore = smartData.score
+              const categoryInfo = CATEGORY_LABELS[smartData.category] || CATEGORY_LABELS['UNKNOWN']
 
               return (
                 <div
@@ -340,25 +424,111 @@ const JobBrowser = () => {
                     </div>
                   </div>
 
+                  {/* Category badge next to source */}
+                  {categoryInfo.label && (
+                    <div className="px-4 pb-0 -mt-1">
+                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-bold ${categoryInfo.color}`}>
+                        {categoryInfo.label}
+                      </span>
+                    </div>
+                  )}
+
                   {/* Expanded section */}
                   {isExpanded && (
                     <div className="px-4 pb-4 border-t border-gray-100 dark:border-gray-700/50 pt-3 animate-fade-in">
-                      {/* Match analysis */}
+                      {/* Smart Match Analysis */}
                       <div className="mb-3 p-3 rounded-lg bg-gray-50 dark:bg-gray-900/50">
                         <div className="flex items-center gap-2 mb-2">
                           <Target size={14} className="text-primary-500" />
-                          <span className="text-sm font-semibold text-gray-900 dark:text-white">ניתוח התאמה</span>
+                          <span className="text-sm font-semibold text-gray-900 dark:text-white">
+                            {smartData.hasSmartScore ? 'ניתוח התאמה חכם' : 'ניתוח התאמה'}
+                          </span>
                           <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${getMatchColor(matchScore)}`}>
                             {matchScore}%
                           </span>
+                          {categoryInfo.label && (
+                            <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${categoryInfo.color}`}>
+                              {categoryInfo.label}
+                            </span>
+                          )}
                         </div>
-                        <p className="text-xs text-gray-600 dark:text-gray-400">
-                          {matchScore >= 80
-                            ? 'התאמה גבוהה! הפרופיל שלך מתאים מאוד למשרה הזו. מומלץ להגיש מועמדות.'
-                            : matchScore >= 60
-                            ? 'התאמה טובה. יש חפיפה משמעותית בין הכישורים שלך לדרישות המשרה.'
-                            : 'התאמה בסיסית. כדאי לשקול אם התפקיד מתאים לכיוון הקריירה שלך.'}
-                        </p>
+
+                        {/* AI Reasoning */}
+                        {smartData.reasoning && (
+                          <p className="text-sm text-gray-700 dark:text-gray-300 mb-2">
+                            {smartData.reasoning}
+                          </p>
+                        )}
+
+                        {!smartData.reasoning && (
+                          <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">
+                            {matchScore >= 80
+                              ? 'התאמה גבוהה! הפרופיל שלך מתאים מאוד למשרה הזו. מומלץ להגיש מועמדות.'
+                              : matchScore >= 60
+                              ? 'התאמה טובה. יש חפיפה משמעותית בין הכישורים שלך לדרישות המשרה.'
+                              : 'התאמה בסיסית. כדאי לשקול אם התפקיד מתאים לכיוון הקריירה שלך.'}
+                          </p>
+                        )}
+
+                        {/* Score breakdown bars */}
+                        {smartData.hasSmartScore && (
+                          <div className="grid grid-cols-2 gap-2 mt-2">
+                            {[
+                              { label: 'כישורים', value: job.rawData?.skillMatch },
+                              { label: 'ניסיון', value: job.rawData?.experienceMatch },
+                              { label: 'רלוונטיות תפקיד', value: job.rawData?.roleRelevance },
+                            ].filter(b => b.value != null).map((bar) => (
+                              <div key={bar.label}>
+                                <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mb-0.5">
+                                  <span>{bar.label}</span>
+                                  <span>{bar.value}%</span>
+                                </div>
+                                <div className="h-1.5 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
+                                  <div
+                                    className={`h-full rounded-full transition-all ${
+                                      bar.value >= 75 ? 'bg-green-500' : bar.value >= 50 ? 'bg-amber-500' : 'bg-red-400'
+                                    }`}
+                                    style={{ width: `${bar.value}%` }}
+                                  />
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Matched & missing skills */}
+                        {smartData.matchedSkills.length > 0 && (
+                          <div className="mt-2">
+                            <span className="text-xs font-medium text-green-600 dark:text-green-400">כישורים תואמים: </span>
+                            <span className="text-xs text-gray-600 dark:text-gray-400">
+                              {smartData.matchedSkills.slice(0, 8).join(', ')}
+                            </span>
+                          </div>
+                        )}
+                        {smartData.missingSkills.length > 0 && (
+                          <div className="mt-1">
+                            <span className="text-xs font-medium text-amber-600 dark:text-amber-400">כישורים חסרים: </span>
+                            <span className="text-xs text-gray-600 dark:text-gray-400">
+                              {smartData.missingSkills.slice(0, 6).join(', ')}
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Green & Red flags */}
+                        {(smartData.greenFlags.length > 0 || smartData.redFlags.length > 0) && (
+                          <div className="flex flex-wrap gap-1.5 mt-2">
+                            {smartData.greenFlags.map((flag, i) => (
+                              <span key={`g${i}`} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-50 text-green-700 text-xs dark:bg-green-900/20 dark:text-green-400">
+                                ✓ {flag}
+                              </span>
+                            ))}
+                            {smartData.redFlags.map((flag, i) => (
+                              <span key={`r${i}`} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-50 text-red-600 text-xs dark:bg-red-900/20 dark:text-red-400">
+                                ⚠ {flag}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </div>
 
                       {/* Job description */}
