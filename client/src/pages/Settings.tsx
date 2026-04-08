@@ -1,580 +1,440 @@
-import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useState, useEffect } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Save,
-  Eye,
-  EyeOff,
-  Download,
-  Upload,
-  AlertCircle,
+  Loader2,
   CheckCircle,
-  AlertTriangle,
+  AlertCircle,
+  User,
+  MapPin,
+  Mail,
+  Phone,
+  Linkedin,
+  Github,
+  Globe,
+  Target,
+  X,
+  Plus,
 } from 'lucide-react'
 import { Card } from '@/components/common/Card'
 import { Badge } from '@/components/common/Badge'
-import { Modal } from '@/components/common/Modal'
+import { profileApi } from '@/services/profile.api'
 
-interface SettingsData {
-  apiKey: string
-  modelSelection: string
-  scraperSources: Array<{
-    name: string
-    enabled: boolean
-    rateLimit: number
-    lastCheckedAt: Date
-  }>
-  scoreThresholds: {
-    autoApply: number
-    manualReview: number
-    skip: number
-  }
-  notifications: {
-    emailNotifications: boolean
-    dailyDigest: boolean
-    instantAlerts: boolean
-  }
-  applicationLimits: {
-    maxPerDay: number
-    maxPerDayPerSource: number
-  }
-  systemHealth: {
-    database: 'healthy' | 'degraded' | 'down'
-    redis: 'healthy' | 'degraded' | 'down'
-    scraper: 'healthy' | 'degraded' | 'down'
-    lastCheck: Date
-  }
-}
+const ROLE_SUGGESTIONS = [
+  'Full Stack Developer',
+  'Frontend Developer',
+  'Backend Developer',
+  'React Developer',
+  'Node.js Developer',
+  'Software Engineer',
+  'DevOps Engineer',
+  'Data Engineer',
+  'AI/ML Engineer',
+  'Team Lead',
+  'Tech Lead',
+  'Product Manager',
+  'QA Engineer',
+  'Mobile Developer',
+  'Cloud Engineer',
+]
 
 const Settings = () => {
-  const [showApiKey, setShowApiKey] = useState(false)
-  const [isExportModalOpen, setIsExportModalOpen] = useState(false)
-  const [isImportModalOpen, setIsImportModalOpen] = useState(false)
+  const queryClient = useQueryClient()
   const [isSaving, setIsSaving] = useState(false)
+  const [successMsg, setSuccessMsg] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
-  const [settings, setSettings] = useState<SettingsData>({
-    apiKey: '',
-    modelSelection: 'claude-3-sonnet',
-    scraperSources: [],
-    scoreThresholds: {
-      autoApply: 85,
-      manualReview: 60,
-      skip: 40,
-    },
-    notifications: {
-      emailNotifications: true,
-      dailyDigest: true,
-      instantAlerts: false,
-    },
-    applicationLimits: {
-      maxPerDay: 10,
-      maxPerDayPerSource: 3,
-    },
-    systemHealth: {
-      database: 'healthy',
-      redis: 'healthy',
-      scraper: 'healthy',
-      lastCheck: new Date(),
-    },
+  // Form state
+  const [fullName, setFullName] = useState('')
+  const [email, setEmail] = useState('')
+  const [phone, setPhone] = useState('')
+  const [location, setLocation] = useState('')
+  const [linkedinUrl, setLinkedinUrl] = useState('')
+  const [githubUrl, setGithubUrl] = useState('')
+  const [portfolioUrl, setPortfolioUrl] = useState('')
+
+  // Job preferences
+  const [targetRoles, setTargetRoles] = useState<string[]>([])
+  const [newRole, setNewRole] = useState('')
+  const [excludeKeywords, setExcludeKeywords] = useState<string[]>([])
+  const [newExclude, setNewExclude] = useState('')
+  const [preferredLocations, setPreferredLocations] = useState<string[]>([])
+  const [newLocation, setNewLocation] = useState('')
+  const [preferredWorkType, setPreferredWorkType] = useState<string>('')
+  const [minExperience, setMinExperience] = useState<string>('')
+
+  // Fetch profile
+  const { data: profileData, isLoading } = useQuery({
+    queryKey: ['profile'],
+    queryFn: () => profileApi.getProfile(),
   })
 
-  const handleSaveSettings = async () => {
+  const profile = (profileData as any)?.data || profileData
+
+  // Load profile data into form
+  useEffect(() => {
+    if (profile) {
+      setFullName(profile.fullName || '')
+      setEmail(profile.email || '')
+      setPhone(profile.phone || '')
+      setLocation(profile.location || '')
+      setLinkedinUrl(profile.linkedinUrl || '')
+      setGithubUrl(profile.githubUrl || '')
+      setPortfolioUrl(profile.portfolioUrl || '')
+
+      const prefs = profile.preferences || {}
+      setTargetRoles(prefs.targetRoles || [])
+      setExcludeKeywords(prefs.excludeKeywords || [])
+      setPreferredLocations(prefs.preferredLocations || [])
+      setPreferredWorkType(prefs.preferredWorkType || '')
+      setMinExperience(prefs.minExperience || '')
+    }
+  }, [profile])
+
+  const handleSave = async () => {
     setIsSaving(true)
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1000))
-    setIsSaving(false)
-  }
-
-  const getHealthStatusIcon = (status: 'healthy' | 'degraded' | 'down') => {
-    switch (status) {
-      case 'healthy':
-        return <CheckCircle className="text-green-600 dark:text-green-400" size={20} />
-      case 'degraded':
-        return <AlertTriangle className="text-yellow-600 dark:text-yellow-400" size={20} />
-      case 'down':
-        return <AlertCircle className="text-red-600 dark:text-red-400" size={20} />
+    setError(null)
+    try {
+      await profileApi.updateProfile({
+        fullName: fullName || undefined,
+        phone: phone || undefined,
+        location: location || undefined,
+        linkedinUrl: linkedinUrl || undefined,
+        githubUrl: githubUrl || undefined,
+        portfolioUrl: portfolioUrl || undefined,
+        preferences: {
+          targetRoles,
+          excludeKeywords,
+          preferredLocations,
+          preferredWorkType: preferredWorkType || undefined,
+          minExperience: minExperience || undefined,
+        },
+      } as any)
+      queryClient.invalidateQueries({ queryKey: ['profile'] })
+      setSuccessMsg('ההגדרות נשמרו בהצלחה!')
+      setTimeout(() => setSuccessMsg(null), 3000)
+    } catch (err: any) {
+      setError(err?.response?.data?.error?.message || err?.message || 'שגיאה בשמירת ההגדרות')
+    } finally {
+      setIsSaving(false)
     }
   }
 
-  const getHealthStatusLabel = (status: 'healthy' | 'degraded' | 'down') => {
-    switch (status) {
-      case 'healthy':
-        return 'Healthy'
-      case 'degraded':
-        return 'Degraded'
-      case 'down':
-        return 'Down'
+  const addTag = (list: string[], setList: (v: string[]) => void, value: string, setValue: (v: string) => void) => {
+    const trimmed = value.trim()
+    if (trimmed && !list.includes(trimmed)) {
+      setList([...list, trimmed])
     }
+    setValue('')
+  }
+
+  const removeTag = (list: string[], setList: (v: string[]) => void, index: number) => {
+    setList(list.filter((_, i) => i !== index))
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="animate-spin h-8 w-8 text-primary-500" />
+      </div>
+    )
   }
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
+    <div className="max-w-3xl mx-auto space-y-6" dir="rtl">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Settings</h1>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">הגדרות</h1>
         <button
-          onClick={handleSaveSettings}
+          onClick={handleSave}
           disabled={isSaving}
-          className="flex items-center gap-2 rounded-lg bg-primary-600 px-4 py-2 text-white hover:bg-primary-700 disabled:opacity-50 font-medium"
+          className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-primary-500 to-purple-500 px-5 py-2.5 text-white font-medium hover:shadow-lg transition-all disabled:opacity-50"
         >
-          <Save size={18} />
-          {isSaving ? 'Saving...' : 'Save Changes'}
+          {isSaving ? <Loader2 className="animate-spin h-4 w-4" /> : <Save size={18} />}
+          {isSaving ? 'שומר...' : 'שמור שינויים'}
         </button>
       </div>
 
-      {/* API Configuration */}
+      {/* Messages */}
+      {successMsg && (
+        <div className="rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 p-4 flex items-center gap-3">
+          <CheckCircle className="h-5 w-5 text-green-500 flex-shrink-0" />
+          <p className="text-green-700 dark:text-green-400 text-sm font-medium">{successMsg}</p>
+        </div>
+      )}
+      {error && (
+        <div className="rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-4 flex items-center gap-3">
+          <AlertCircle className="h-5 w-5 text-red-500 flex-shrink-0" />
+          <p className="text-red-700 dark:text-red-400 text-sm font-medium">{error}</p>
+        </div>
+      )}
+
+      {/* Personal Info */}
       <Card>
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">API Configuration</h2>
-        <div className="space-y-4">
-          {/* API Key */}
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+          <User size={20} className="text-primary-500" />
+          פרטים אישיים
+        </h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Anthropic API Key
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">שם מלא</label>
+            <input
+              type="text"
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+              placeholder="השם המלא שלך"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">אימייל</label>
+            <input
+              type="email"
+              value={email}
+              disabled
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-800 dark:text-white bg-gray-50 dark:bg-gray-900 cursor-not-allowed"
+            />
+            <p className="text-xs text-gray-500 mt-1">לא ניתן לשנות אימייל</p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">טלפון</label>
+            <input
+              type="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+              placeholder="050-1234567"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">מיקום</label>
+            <input
+              type="text"
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+              placeholder="תל אביב, ישראל"
+            />
+          </div>
+        </div>
+      </Card>
+
+      {/* Links */}
+      <Card>
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+          <Globe size={20} className="text-primary-500" />
+          קישורים
+        </h2>
+        <div className="space-y-4">
+          <div>
+            <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+              <Linkedin size={16} /> LinkedIn
             </label>
-            <div className="flex gap-2">
-              <div className="flex-1 relative">
-                <input
-                  type={showApiKey ? 'text' : 'password'}
-                  value={settings.apiKey}
-                  onChange={(e) => setSettings({ ...settings, apiKey: e.target.value })}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 pr-10 dark:border-gray-700 dark:bg-gray-800"
-                />
-                <button
-                  onClick={() => setShowApiKey(!showApiKey)}
-                  className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-                >
-                  {showApiKey ? <EyeOff size={18} /> : <Eye size={18} />}
-                </button>
-              </div>
-            </div>
-            <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">
-              Your API key is encrypted and never shared. Get it at console.anthropic.com
-            </p>
+            <input
+              type="url"
+              value={linkedinUrl}
+              onChange={(e) => setLinkedinUrl(e.target.value)}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+              placeholder="https://linkedin.com/in/..."
+              dir="ltr"
+            />
           </div>
-
-          {/* Model Selection */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Model Selection
+            <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+              <Github size={16} /> GitHub
             </label>
-            <select
-              value={settings.modelSelection}
-              onChange={(e) => setSettings({ ...settings, modelSelection: e.target.value })}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-800"
-            >
-              <option value="claude-3-haiku">Claude 3 Haiku (Fast, Low Cost)</option>
-              <option value="claude-3-sonnet">Claude 3 Sonnet (Balanced)</option>
-              <option value="claude-3-opus">Claude 3 Opus (Most Capable)</option>
-            </select>
-            <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">
-              Choose based on your speed/cost/quality preferences
-            </p>
+            <input
+              type="url"
+              value={githubUrl}
+              onChange={(e) => setGithubUrl(e.target.value)}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+              placeholder="https://github.com/..."
+              dir="ltr"
+            />
           </div>
-        </div>
-      </Card>
-
-      {/* Scraper Sources */}
-      <Card>
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Scraper Sources</h2>
-        {settings.scraperSources.length === 0 ? (
-          <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-            <p className="text-sm">לא הוגדרו מקורות סריפר</p>
-          </div>
-        ) : (
-        <div className="space-y-3">
-          {settings.scraperSources.map((source) => (
-            <div key={source.name} className="flex items-center justify-between p-3 rounded-lg bg-gray-50 dark:bg-gray-800">
-              <div className="flex-1">
-                <div className="flex items-center gap-3 mb-2">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={source.enabled}
-                      onChange={(e) => {
-                        const updated = settings.scraperSources.map((s) =>
-                          s.name === source.name ? { ...s, enabled: e.target.checked } : s
-                        )
-                        setSettings({ ...settings, scraperSources: updated })
-                      }}
-                      className="rounded"
-                    />
-                    <span className="font-medium text-gray-900 dark:text-white">{source.name}</span>
-                  </label>
-                  {source.enabled && (
-                    <Badge variant="success" size="sm">
-                      Active
-                    </Badge>
-                  )}
-                </div>
-                <p className="text-xs text-gray-600 dark:text-gray-400">
-                  Last checked: {source.lastCheckedAt.toLocaleTimeString()}
-                </p>
-              </div>
-              <div className="text-right">
-                <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                  Rate Limit
-                </label>
-                <input
-                  type="number"
-                  value={source.rateLimit}
-                  onChange={(e) => {
-                    const updated = settings.scraperSources.map((s) =>
-                      s.name === source.name ? { ...s, rateLimit: parseInt(e.target.value) } : s
-                    )
-                    setSettings({ ...settings, scraperSources: updated })
-                  }}
-                  className="w-20 rounded-lg border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
-                />
-              </div>
-            </div>
-          ))}
-        </div>
-        )}
-      </Card>
-
-      {/* Score Thresholds */}
-      <Card>
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Score Thresholds</h2>
-        <div className="space-y-4">
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                Auto-Apply Threshold
-              </label>
-              <span className="text-lg font-bold text-gray-900 dark:text-white">{settings.scoreThresholds.autoApply}%</span>
-            </div>
+            <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+              <Globe size={16} /> פורטפוליו / אתר אישי
+            </label>
             <input
-              type="range"
-              min="0"
-              max="100"
-              value={settings.scoreThresholds.autoApply}
-              onChange={(e) => setSettings({
-                ...settings,
-                scoreThresholds: { ...settings.scoreThresholds, autoApply: parseInt(e.target.value) }
-              })}
-              className="w-full"
-            />
-            <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
-              Jobs above this score will be automatically applied to
-            </p>
-          </div>
-
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                Manual Review Threshold
-              </label>
-              <span className="text-lg font-bold text-gray-900 dark:text-white">{settings.scoreThresholds.manualReview}%</span>
-            </div>
-            <input
-              type="range"
-              min="0"
-              max="100"
-              value={settings.scoreThresholds.manualReview}
-              onChange={(e) => setSettings({
-                ...settings,
-                scoreThresholds: { ...settings.scoreThresholds, manualReview: parseInt(e.target.value) }
-              })}
-              className="w-full"
-            />
-            <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
-              Jobs between review and skip threshold will be added to review queue
-            </p>
-          </div>
-
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                Skip Threshold
-              </label>
-              <span className="text-lg font-bold text-gray-900 dark:text-white">{settings.scoreThresholds.skip}%</span>
-            </div>
-            <input
-              type="range"
-              min="0"
-              max="100"
-              value={settings.scoreThresholds.skip}
-              onChange={(e) => setSettings({
-                ...settings,
-                scoreThresholds: { ...settings.scoreThresholds, skip: parseInt(e.target.value) }
-              })}
-              className="w-full"
-            />
-            <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
-              Jobs below this score will be automatically skipped
-            </p>
-          </div>
-        </div>
-      </Card>
-
-      {/* Notifications */}
-      <Card>
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Notifications</h2>
-        <div className="space-y-3">
-          <label className="flex items-center gap-3 cursor-pointer p-2 rounded hover:bg-gray-50 dark:hover:bg-gray-800">
-            <input
-              type="checkbox"
-              checked={settings.notifications.emailNotifications}
-              onChange={(e) => setSettings({
-                ...settings,
-                notifications: { ...settings.notifications, emailNotifications: e.target.checked }
-              })}
-              className="rounded"
-            />
-            <div className="flex-1">
-              <p className="font-medium text-gray-900 dark:text-white">Email Notifications</p>
-              <p className="text-xs text-gray-600 dark:text-gray-400">Get email updates on applications and responses</p>
-            </div>
-          </label>
-
-          <label className="flex items-center gap-3 cursor-pointer p-2 rounded hover:bg-gray-50 dark:hover:bg-gray-800">
-            <input
-              type="checkbox"
-              checked={settings.notifications.dailyDigest}
-              onChange={(e) => setSettings({
-                ...settings,
-                notifications: { ...settings.notifications, dailyDigest: e.target.checked }
-              })}
-              className="rounded"
-            />
-            <div className="flex-1">
-              <p className="font-medium text-gray-900 dark:text-white">Daily Digest</p>
-              <p className="text-xs text-gray-600 dark:text-gray-400">Receive a daily summary of activity</p>
-            </div>
-          </label>
-
-          <label className="flex items-center gap-3 cursor-pointer p-2 rounded hover:bg-gray-50 dark:hover:bg-gray-800">
-            <input
-              type="checkbox"
-              checked={settings.notifications.instantAlerts}
-              onChange={(e) => setSettings({
-                ...settings,
-                notifications: { ...settings.notifications, instantAlerts: e.target.checked }
-              })}
-              className="rounded"
-            />
-            <div className="flex-1">
-              <p className="font-medium text-gray-900 dark:text-white">Instant Alerts</p>
-              <p className="text-xs text-gray-600 dark:text-gray-400">Get notified immediately on new responses</p>
-            </div>
-          </label>
-        </div>
-      </Card>
-
-      {/* Application Limits */}
-      <Card>
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Application Limits</h2>
-        <div className="space-y-4">
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                Max Applications Per Day
-              </label>
-              <span className="text-lg font-bold text-gray-900 dark:text-white">{settings.applicationLimits.maxPerDay}</span>
-            </div>
-            <input
-              type="range"
-              min="1"
-              max="50"
-              value={settings.applicationLimits.maxPerDay}
-              onChange={(e) => setSettings({
-                ...settings,
-                applicationLimits: { ...settings.applicationLimits, maxPerDay: parseInt(e.target.value) }
-              })}
-              className="w-full"
-            />
-          </div>
-
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                Max Per Source Per Day
-              </label>
-              <span className="text-lg font-bold text-gray-900 dark:text-white">{settings.applicationLimits.maxPerDayPerSource}</span>
-            </div>
-            <input
-              type="range"
-              min="1"
-              max="20"
-              value={settings.applicationLimits.maxPerDayPerSource}
-              onChange={(e) => setSettings({
-                ...settings,
-                applicationLimits: { ...settings.applicationLimits, maxPerDayPerSource: parseInt(e.target.value) }
-              })}
-              className="w-full"
+              type="url"
+              value={portfolioUrl}
+              onChange={(e) => setPortfolioUrl(e.target.value)}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+              placeholder="https://..."
+              dir="ltr"
             />
           </div>
         </div>
       </Card>
 
-      {/* Data Management */}
+      {/* Job Preferences — THE KEY SECTION */}
       <Card>
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Data Management</h2>
-        <div className="flex gap-3">
-          <button
-            onClick={() => setIsExportModalOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:hover:bg-gray-700 font-medium transition-colors"
-          >
-            <Download size={18} />
-            Export Data
-          </button>
-          <button
-            onClick={() => setIsImportModalOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:hover:bg-gray-700 font-medium transition-colors"
-          >
-            <Upload size={18} />
-            Import Data
-          </button>
-        </div>
-        <p className="text-xs text-gray-600 dark:text-gray-400 mt-3">
-          Export all your data as JSON. Import to restore or migrate to another instance.
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-2 flex items-center gap-2">
+          <Target size={20} className="text-primary-500" />
+          העדפות חיפוש משרות
+        </h2>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+          הגדר את סוגי התפקידים שמעניינים אותך כדי לקבל תוצאות ממוקדות יותר
         </p>
-      </Card>
 
-      {/* System Health */}
-      <Card>
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">System Health</h2>
-        <div className="space-y-3">
-          <div className="flex items-center justify-between p-3 rounded-lg bg-gray-50 dark:bg-gray-800">
-            <div>
-              <p className="font-medium text-gray-900 dark:text-white">Database</p>
-              <p className="text-xs text-gray-600 dark:text-gray-400">
-                Last checked: {settings.systemHealth.lastCheck.toLocaleTimeString()}
-              </p>
+        <div className="space-y-5">
+          {/* Target Roles */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">תפקידים שמעניינים אותי</label>
+            <div className="flex flex-wrap gap-2 mb-2">
+              {targetRoles.map((role, i) => (
+                <span key={i} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400 text-sm font-medium">
+                  {role}
+                  <button onClick={() => removeTag(targetRoles, setTargetRoles, i)} className="hover:text-red-500">
+                    <X size={14} />
+                  </button>
+                </span>
+              ))}
             </div>
-            <div className="flex items-center gap-2">
-              {getHealthStatusIcon(settings.systemHealth.database)}
-              <span className="text-sm font-medium text-gray-900 dark:text-white">
-                {getHealthStatusLabel(settings.systemHealth.database)}
-              </span>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={newRole}
+                onChange={(e) => setNewRole(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addTag(targetRoles, setTargetRoles, newRole, setNewRole))}
+                className="flex-1 rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
+                placeholder="הוסף תפקיד..."
+              />
+              <button
+                type="button"
+                onClick={() => addTag(targetRoles, setTargetRoles, newRole, setNewRole)}
+                className="px-3 py-2 rounded-lg bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 hover:bg-primary-200 dark:hover:bg-primary-900/50 transition-colors"
+              >
+                <Plus size={18} />
+              </button>
+            </div>
+            {/* Quick suggestions */}
+            {targetRoles.length === 0 && (
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {ROLE_SUGGESTIONS.slice(0, 8).map((suggestion) => (
+                  <button
+                    key={suggestion}
+                    type="button"
+                    onClick={() => setTargetRoles([...targetRoles, suggestion])}
+                    className="px-2.5 py-1 rounded-full border border-gray-300 dark:border-gray-600 text-xs text-gray-600 dark:text-gray-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 hover:border-primary-300 dark:hover:border-primary-700 transition-colors"
+                  >
+                    + {suggestion}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Exclude Keywords */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">מילות מפתח לסינון (משרות שלא מעניינות)</label>
+            <div className="flex flex-wrap gap-2 mb-2">
+              {excludeKeywords.map((kw, i) => (
+                <span key={i} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 text-sm font-medium">
+                  {kw}
+                  <button onClick={() => removeTag(excludeKeywords, setExcludeKeywords, i)} className="hover:text-red-800">
+                    <X size={14} />
+                  </button>
+                </span>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={newExclude}
+                onChange={(e) => setNewExclude(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addTag(excludeKeywords, setExcludeKeywords, newExclude, setNewExclude))}
+                className="flex-1 rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
+                placeholder="למשל: QA, מוביל מחקר, סטודנט..."
+              />
+              <button
+                type="button"
+                onClick={() => addTag(excludeKeywords, setExcludeKeywords, newExclude, setNewExclude)}
+                className="px-3 py-2 rounded-lg bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
+              >
+                <Plus size={18} />
+              </button>
             </div>
           </div>
 
-          <div className="flex items-center justify-between p-3 rounded-lg bg-gray-50 dark:bg-gray-800">
-            <div>
-              <p className="font-medium text-gray-900 dark:text-white">Redis Cache</p>
-              <p className="text-xs text-gray-600 dark:text-gray-400">
-                Last checked: {settings.systemHealth.lastCheck.toLocaleTimeString()}
-              </p>
+          {/* Preferred Locations */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">מיקומים מועדפים</label>
+            <div className="flex flex-wrap gap-2 mb-2">
+              {preferredLocations.map((loc, i) => (
+                <span key={i} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 text-sm font-medium">
+                  {loc}
+                  <button onClick={() => removeTag(preferredLocations, setPreferredLocations, i)} className="hover:text-red-500">
+                    <X size={14} />
+                  </button>
+                </span>
+              ))}
             </div>
-            <div className="flex items-center gap-2">
-              {getHealthStatusIcon(settings.systemHealth.redis)}
-              <span className="text-sm font-medium text-gray-900 dark:text-white">
-                {getHealthStatusLabel(settings.systemHealth.redis)}
-              </span>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={newLocation}
+                onChange={(e) => setNewLocation(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addTag(preferredLocations, setPreferredLocations, newLocation, setNewLocation))}
+                className="flex-1 rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
+                placeholder="למשל: תל אביב, הרצליה, רמת גן..."
+              />
+              <button
+                type="button"
+                onClick={() => addTag(preferredLocations, setPreferredLocations, newLocation, setNewLocation)}
+                className="px-3 py-2 rounded-lg bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors"
+              >
+                <Plus size={18} />
+              </button>
             </div>
           </div>
 
-          <div className="flex items-center justify-between p-3 rounded-lg bg-gray-50 dark:bg-gray-800">
+          {/* Work Type & Experience */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <p className="font-medium text-gray-900 dark:text-white">Job Scrapers</p>
-              <p className="text-xs text-gray-600 dark:text-gray-400">
-                Last checked: {settings.systemHealth.lastCheck.toLocaleTimeString()}
-              </p>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">סוג עבודה מועדף</label>
+              <select
+                value={preferredWorkType}
+                onChange={(e) => setPreferredWorkType(e.target.value)}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
+              >
+                <option value="">הכל</option>
+                <option value="REMOTE">Remote</option>
+                <option value="HYBRID">Hybrid</option>
+                <option value="ONSITE">On-site</option>
+              </select>
             </div>
-            <div className="flex items-center gap-2">
-              {getHealthStatusIcon(settings.systemHealth.scraper)}
-              <span className="text-sm font-medium text-gray-900 dark:text-white">
-                {getHealthStatusLabel(settings.systemHealth.scraper)}
-              </span>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">רמת ניסיון</label>
+              <select
+                value={minExperience}
+                onChange={(e) => setMinExperience(e.target.value)}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
+              >
+                <option value="">הכל</option>
+                <option value="ENTRY">Entry Level</option>
+                <option value="JUNIOR">Junior</option>
+                <option value="MID">Mid Level</option>
+                <option value="SENIOR">Senior</option>
+                <option value="LEAD">Lead</option>
+              </select>
             </div>
           </div>
         </div>
       </Card>
 
-      {/* Export Modal */}
-      <Modal
-        isOpen={isExportModalOpen}
-        onClose={() => setIsExportModalOpen(false)}
-        title="Export Data"
-        size="md"
-        footer={
-          <div className="flex gap-3 justify-end">
-            <button
-              onClick={() => setIsExportModalOpen(false)}
-              className="px-4 py-2 rounded-lg border border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800 font-medium"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={() => {
-                console.log('Export data')
-                setIsExportModalOpen(false)
-              }}
-              className="px-4 py-2 rounded-lg bg-primary-600 text-white hover:bg-primary-700 font-medium"
-            >
-              Download
-            </button>
-          </div>
-        }
-      >
-        <div className="space-y-3">
-          <p className="text-gray-600 dark:text-gray-400">
-            This will download all your data including jobs, applications, personas, and settings as a JSON file.
-          </p>
-          <div className="rounded-lg bg-blue-50 p-3 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
-            <p className="text-sm text-blue-800 dark:text-blue-200">
-              The export file will be encrypted with your password for security.
-            </p>
-          </div>
-          <label className="block">
-            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Password (optional)</span>
-            <input
-              type="password"
-              placeholder="Leave empty to skip encryption"
-              className="w-full mt-1 rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-800"
-            />
-          </label>
-        </div>
-      </Modal>
-
-      {/* Import Modal */}
-      <Modal
-        isOpen={isImportModalOpen}
-        onClose={() => setIsImportModalOpen(false)}
-        title="Import Data"
-        size="md"
-        footer={
-          <div className="flex gap-3 justify-end">
-            <button
-              onClick={() => setIsImportModalOpen(false)}
-              className="px-4 py-2 rounded-lg border border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800 font-medium"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={() => {
-                console.log('Import data')
-                setIsImportModalOpen(false)
-              }}
-              className="px-4 py-2 rounded-lg bg-primary-600 text-white hover:bg-primary-700 font-medium"
-            >
-              Import
-            </button>
-          </div>
-        }
-      >
-        <div className="space-y-3">
-          <p className="text-gray-600 dark:text-gray-400">
-            Select a previously exported JSON file to restore your data.
-          </p>
-          <div className="rounded-lg border-2 border-dashed border-gray-300 p-6 text-center dark:border-gray-700">
-            <Upload className="mx-auto mb-2 text-gray-400" size={32} />
-            <p className="text-sm font-medium text-gray-900 dark:text-white">Choose file to import</p>
-            <button className="mt-2 rounded-lg bg-gray-100 px-3 py-1 text-sm hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700">
-              Select File
-            </button>
-          </div>
-          {/* Encrypted import */}
-          <label className="block">
-            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Password</span>
-            <input
-              type="password"
-              placeholder="Enter password if file is encrypted"
-              className="w-full mt-1 rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-800"
-            />
-          </label>
-        </div>
-      </Modal>
+      {/* Save Button (bottom) */}
+      <div className="flex justify-center pb-8">
+        <button
+          onClick={handleSave}
+          disabled={isSaving}
+          className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-primary-500 to-purple-500 px-8 py-3 text-white font-medium shadow-lg hover:shadow-xl transition-all disabled:opacity-50 text-lg"
+        >
+          {isSaving ? <Loader2 className="animate-spin h-5 w-5" /> : <Save size={20} />}
+          {isSaving ? 'שומר...' : 'שמור הגדרות'}
+        </button>
+      </div>
     </div>
   )
 }

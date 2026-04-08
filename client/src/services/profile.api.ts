@@ -8,7 +8,7 @@ export const profileApi = {
   },
 
   async updateProfile(profile: Partial<UserProfile>): Promise<UserProfile> {
-    const { data } = await apiClient.put('/profile', profile)
+    const { data } = await apiClient.patch('/profile', profile)
     return data
   },
 

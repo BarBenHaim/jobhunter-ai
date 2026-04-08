@@ -14,6 +14,66 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 router.use(authMiddleware);
 
+// GET /api/cv/download - Download a generated CV file (MUST be before /:applicationId)
+router.get(
+  '/download',
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const filePath = req.query.path as string;
+
+    if (!filePath) {
+      res.status(400).json({ success: false, error: 'File path is required' });
+      return;
+    }
+
+    // Security: ensure path is within our storage directory
+    const path = require('path');
+    const normalizedPath = path.resolve(filePath);
+    const storageDir = path.resolve(process.cwd(), 'storage');
+
+    if (!normalizedPath.startsWith(storageDir)) {
+      res.status(403).json({ success: false, error: 'Access denied' });
+      return;
+    }
+
+    try {
+      await fs.access(normalizedPath);
+    } catch {
+      res.status(404).json({ success: false, error: 'File not found' });
+      return;
+    }
+
+    const ext = path.extname(normalizedPath).toLowerCase();
+    const mimeTypes: Record<string, string> = {
+      '.pdf': 'application/pdf',
+      '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    };
+
+    const contentType = mimeTypes[ext] || 'application/octet-stream';
+    const fileName = path.basename(normalizedPath);
+
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+
+    const fileBuffer = await fs.readFile(normalizedPath);
+    res.send(fileBuffer);
+  })
+);
+
+// GET /api/cv/templates - List templates (MUST be before /:applicationId)
+router.get(
+  '/templates',
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const templates = await cvService.listTemplates();
+    res.status(200).json({
+      success: true,
+      data: templates,
+      meta: {
+        total: templates.length,
+      },
+    });
+  })
+);
+
 // POST /api/cv/generate - Generate CV for job+persona
 router.post(
   '/generate',
@@ -208,21 +268,6 @@ router.post(
   })
 );
 
-// GET /api/cv/templates - List templates
-router.get(
-  '/templates',
-  asyncHandler(async (req: AuthRequest, res: Response) => {
-    const templates = await cvService.listTemplates();
-    res.status(200).json({
-      success: true,
-      data: templates,
-      meta: {
-        total: templates.length,
-      },
-    });
-  })
-);
-
 // POST /api/cv/templates - Upload template
 router.post(
   '/templates',
@@ -359,51 +404,6 @@ router.post(
       success: true,
       data: versions,
     });
-  })
-);
-
-// GET /api/cv/download - Download a generated CV file
-router.get(
-  '/download',
-  asyncHandler(async (req: AuthRequest, res: Response) => {
-    const filePath = req.query.path as string;
-
-    if (!filePath) {
-      res.status(400).json({ success: false, error: 'File path is required' });
-      return;
-    }
-
-    // Security: ensure path is within our storage directory
-    const path = require('path');
-    const normalizedPath = path.resolve(filePath);
-    const storageDir = path.resolve(process.cwd(), 'storage');
-
-    if (!normalizedPath.startsWith(storageDir)) {
-      res.status(403).json({ success: false, error: 'Access denied' });
-      return;
-    }
-
-    try {
-      await fs.access(normalizedPath);
-    } catch {
-      res.status(404).json({ success: false, error: 'File not found' });
-      return;
-    }
-
-    const ext = path.extname(normalizedPath).toLowerCase();
-    const mimeTypes: Record<string, string> = {
-      '.pdf': 'application/pdf',
-      '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    };
-
-    const contentType = mimeTypes[ext] || 'application/octet-stream';
-    const fileName = path.basename(normalizedPath);
-
-    res.setHeader('Content-Type', contentType);
-    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
-
-    const fileBuffer = await fs.readFile(normalizedPath);
-    res.send(fileBuffer);
   })
 );
 

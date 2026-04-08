@@ -23,7 +23,7 @@ interface CVResult {
 }
 
 interface Job {
-  _id: string
+  id: string
   title: string
   company: string
   location?: string
@@ -75,7 +75,7 @@ export default function CVGenerator() {
   // Auto-select job from URL param
   useEffect(() => {
     if (preselectedJobId && jobs.length > 0) {
-      const job = jobs.find((j: any) => j.id === preselectedJobId || j._id === preselectedJobId)
+      const job = jobs.find((j: any) => j.id === preselectedJobId || j.id === preselectedJobId)
       if (job) {
         setSelectedJob(job)
         setActiveTab('job')
@@ -189,7 +189,7 @@ export default function CVGenerator() {
     setError(null)
     setSuccessMsg(null)
     try {
-      const result = await cvApi.generateForJob(selectedJob._id)
+      const result = await cvApi.generateForJob(selectedJob.id)
       const data = result?.data
 
       if (data) {
@@ -340,13 +340,13 @@ export default function CVGenerator() {
             {filteredJobs.length > 0 ? (
               filteredJobs.map(job => (
                 <button
-                  key={job._id}
+                  key={job.id}
                   onClick={() => {
                     setSelectedJob(job)
                     setJobCVResult(null)
                   }}
                   className={`w-full text-left rounded-2xl border-2 p-4 transition-all duration-200 ${
-                    selectedJob?._id === job._id
+                    selectedJob?.id === job.id
                       ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
                       : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-primary-300 dark:hover:border-primary-700'
                   }`}
@@ -362,7 +362,7 @@ export default function CVGenerator() {
                         <p className="text-xs text-gray-500 dark:text-gray-500 mt-0.5">מקור: {job.source}</p>
                       )}
                     </div>
-                    {selectedJob?._id === job._id && (
+                    {selectedJob?.id === job.id && (
                       <CheckCircle className="h-5 w-5 text-primary-500 flex-shrink-0 mt-1" />
                     )}
                   </div>
