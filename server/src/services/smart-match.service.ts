@@ -596,7 +596,7 @@ export function scoreJobLocally(
       const ratio = descSkillHits / Math.max(allDescSkills, descSkillHits);
       requirementsCoverage = Math.round(Math.min(100, ratio * 100 * 1.2 + 15));
     } else {
-      requirementsCoverage = 55; // Unknown — neutral, not punishing
+      requirementsCoverage = 35; // Unknown requirements — cautious score, rely on role alignment
     }
   }
 
@@ -676,7 +676,7 @@ export function scoreJobLocally(
   // STEP 5: ROLE ALIGNMENT (20% of total score)
   // "Is this the kind of work I actually do / can do?"
   // ----------------------------------------------------------
-  let roleScore = 40; // Base: job was found via profile-tailored keywords, so there's baseline relevance
+  let roleScore = 15; // Low base — must EARN role relevance via actual matches
 
   const targetRoles = profileAnalysis.targetRoles.map(r => r.toLowerCase());
   const previousRoles = profileAnalysis.previousRoles;
@@ -738,11 +738,11 @@ export function scoreJobLocally(
 
   // If role score is still low but skills match well, boost role score
   // (means: the tools are right even if the title is different — common in tech)
-  if (roleScore <= 45 && requirementsCoverage >= 60) {
-    roleScore = Math.max(roleScore, 60); // "Different title, similar skillset"
+  if (roleScore <= 30 && requirementsCoverage >= 65) {
+    roleScore = Math.max(roleScore, 50); // "Different title, similar skillset"
   }
-  if (roleScore <= 45 && requirementsCoverage >= 40) {
-    roleScore = Math.max(roleScore, 50); // Some overlap in tools
+  if (roleScore <= 30 && requirementsCoverage >= 50) {
+    roleScore = Math.max(roleScore, 40); // Some overlap in tools
   }
 
   // ----------------------------------------------------------
@@ -767,14 +767,56 @@ export function scoreJobLocally(
   }
 
   // ----------------------------------------------------------
+  // STEP 6.5: TECH RELEVANCE GATE
+  // "Is this even a tech/dev job at all?"
+  // If the job has ZERO skill overlap with the candidate AND the title
+  // doesn't match any tech role pattern, it's probably irrelevant garbage
+  // from a broad search. Hard-cap the score.
+  // ----------------------------------------------------------
+  const TECH_ROLE_PATTERNS = [
+    'developer', 'engineer', 'architect', 'devops', 'sre', 'qa', 'tester',
+    'programmer', 'coder', 'software', 'data', 'analyst', 'fullstack', 'full stack',
+    'full-stack', 'frontend', 'front-end', 'backend', 'back-end', 'web ',
+    'mobile', 'ios', 'android', 'cloud', 'security', 'cyber', 'ml', 'ai ',
+    'machine learning', 'product manager', 'scrum', 'agile', 'tech lead',
+    'it ', 'information technology', 'system', 'database', 'dba', 'bi ',
+    'business intelligence', 'automation', 'integration',
+    'מפתח', 'מהנדס', 'תוכנה', 'פיתוח', 'מנתח', 'בודק', 'QA', 'דאטה', 'מערכות',
+    'טכנולוג', 'אינטגרציה', 'אוטומציה', 'סייבר', 'אבטחת מידע',
+    'qlik', 'tableau', 'power bi', 'crm', 'erp', 'sap', 'salesforce',
+  ];
+
+  const titleHasTechPattern = TECH_ROLE_PATTERNS.some(p => title.includes(p));
+  const totalSkillOverlap = jobReqs.allMentioned.length > 0
+    ? [...expandedSkills].filter(s => jobReqs.allMentioned.includes(s)).length
+    : [...expandedSkills].filter(s => fullText.includes(s)).length;
+
+  let isTechRelevant = titleHasTechPattern || totalSkillOverlap >= 2;
+
+  // If no tech pattern in title and very few skill matches, this is likely not a relevant job
+  if (!isTechRelevant) {
+    // Check if description has enough tech overlap to still be relevant
+    const descTechHits = [...expandedSkills].filter(s => fullText.includes(s)).length;
+    if (descTechHits >= 3) {
+      isTechRelevant = true; // Description has enough tech content
+    }
+  }
+
+  // ----------------------------------------------------------
   // STEP 7: OVERALL SCORE — weighted by professional fit
   // ----------------------------------------------------------
-  const overallScore = Math.round(
+  let overallScore = Math.round(
     requirementsCoverage * 0.50 +  // 50%: Do I meet the requirements?
     experienceScore * 0.25 +       // 25%: Am I at the right level?
     roleScore * 0.20 +             // 20%: Is this my kind of role?
     locationScore * 0.05           //  5%: Location (minor)
   );
+
+  // TECH RELEVANCE GATE: Non-tech jobs get hard-capped
+  if (!isTechRelevant) {
+    overallScore = Math.min(overallScore, 20);
+    roleScore = Math.min(roleScore, 10);
+  }
 
   // ----------------------------------------------------------
   // STEP 8: GREEN FLAGS & RED FLAGS
@@ -801,6 +843,7 @@ export function scoreJobLocally(
   if (detectedJobLevel >= 0 && candidateLevelNum - detectedJobLevel <= -2) redFlags.push('רמת הבכירות גבוהה מידי');
   if (detectedJobLevel >= 0 && candidateLevelNum - detectedJobLevel >= 3) redFlags.push('תפקיד מתחת לרמה שלך');
   if (roleScore <= 25) redFlags.push('תחום שונה מהניסיון שלך');
+  if (!isTechRelevant) redFlags.push('לא נראה כתפקיד טכנולוגי/פיתוח');
 
   // ----------------------------------------------------------
   // STEP 9: CATEGORY & REASONING

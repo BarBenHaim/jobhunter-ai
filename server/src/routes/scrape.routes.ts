@@ -25,19 +25,40 @@ const DEFAULT_KEYWORDS = [
 
 // Words that indicate a job is NOT tech-related — used to filter out irrelevant results
 const IRRELEVANT_TITLE_KEYWORDS = [
+  // Sales & Marketing
   'מכירות', 'sales', 'נציג שירות', 'customer service', 'call center', 'מוקד',
   'שיווק', 'marketing', 'סושיאל', 'social media', 'תוכן', 'content writer',
-  'מנהל חשבונות', 'accounting', 'הנהלת חשבונות', 'bookkeep',
-  'מזכיר', 'secretary', 'אדמיניסטרציה', 'admin assistant',
+  'territory manager', 'account executive', 'business development rep',
+  // Finance & Accounting
+  'מנהל חשבונות', 'accounting', 'הנהלת חשבונות', 'bookkeep', 'accountant',
+  'חשבונאי', 'פיננסי', 'financial', 'finance manager', 'cfo', 'controller',
+  'רואה חשבון', 'auditor', 'מבקר', 'tax', 'מיסים',
+  // Admin & Office
+  'מזכיר', 'secretary', 'אדמיניסטרציה', 'admin assistant', 'receptionist', 'קבלה',
+  'office manager',
+  // Manual/Trade
   'נהג', 'driver', 'שליח', 'courier', 'משלוח',
   'טכנאי מזגנים', 'אינסטלטור', 'plumber', 'חשמלאי', 'electrician',
+  'מכונאי', 'mechanical designer', 'mechanical engineer', 'הנדסה מכנית',
+  'civil engineer', 'מהנדס אזרחי', 'structural engineer', 'construction',
   'עוזר בית', 'מטפל', 'caregiver', 'סיעוד',
   'קופאי', 'cashier', 'מלצר', 'waiter', 'ברמן', 'bartender',
   'אבטחה', 'security guard', 'שומר', 'guard',
-  'עורך דין', 'lawyer', 'attorney',
   'מנקה', 'cleaning', 'ניקיון',
-  'פיננסי', 'financial advisor',
-  'ביטוח', 'insurance agent',
+  // Legal
+  'עורך דין', 'lawyer', 'attorney', 'legal counsel', 'יועץ משפטי',
+  // Insurance
+  'ביטוח', 'insurance',
+  // HR & Recruiting (unless tech recruiting)
+  'talent acquisition', 'recruiter', 'מגייס', 'גיוס', 'hr manager', 'משאבי אנוש',
+  // Healthcare & Science
+  'רופא', 'doctor', 'nurse', 'אחות', 'pharmacist', 'רוקח',
+  'veterinary', 'וטרינר', 'diagnostics',
+  // Supply Chain & Logistics
+  'supply chain', 'שרשרת אספקה', 'procurement', 'רכש', 'logistics', 'לוגיסטיקה',
+  'warehouse', 'מחסנאי',
+  // Safety & Environment
+  'hse ', 'health safety', 'בטיחות', 'safety manager', 'environmental',
 ]
 
 /** Check if a job title looks tech-relevant. Returns false for obvious non-tech jobs. */
