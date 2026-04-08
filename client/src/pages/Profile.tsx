@@ -39,6 +39,16 @@ const Profile = () => {
     queryFn: () => profileApi.getProfile(),
   })
 
+  // Load saved raw knowledge text into the textarea on first load
+  const [hasLoadedSaved, setHasLoadedSaved] = useState(false)
+  if (!hasLoadedSaved && profile) {
+    const savedContent = (profile as any)?.rawKnowledge?.content
+    if (savedContent && !rawInput) {
+      setRawInput(savedContent)
+    }
+    setHasLoadedSaved(true)
+  }
+
   const sp = profile?.structuredProfile as any
   const hasStructuredData = sp && (sp.experience?.length > 0 || sp.skills || sp.education?.length > 0)
 
@@ -50,7 +60,6 @@ const Profile = () => {
       await profileApi.submitKnowledge({ text: rawInput })
       queryClient.invalidateQueries({ queryKey: ['profile'] })
       setSuccessMsg('הפרופיל עודכן בהצלחה!')
-      setRawInput('')
       setTimeout(() => setSuccessMsg(null), 3000)
     } catch (err: any) {
       setError(err?.message || 'שגיאה בעדכון הפרופיל')

@@ -42,7 +42,42 @@ export class JobService {
       }
 
       if (filters.experienceLevel) {
-        where.experienceLevel = { equals: filters.experienceLevel, mode: 'insensitive' };
+        // Smart experience level matching — scraped data uses freeform strings like
+        // "1-2 שנים", "Senior", "Entry Level", "Mid-Senior level", etc.
+        // Map the filter value to multiple possible patterns to search in the DB.
+        const expPatterns: Record<string, string[]> = {
+          ENTRY: ['entry', 'junior', 'intern', 'graduate', 'סטודנט', 'ג׳וניור', 'התחלתי', '0-1', '0-2'],
+          JUNIOR: ['junior', 'ג׳וניור', 'entry', '0-2', '1-2', '1-3'],
+          MID: ['mid', 'middle', '2-4', '2-5', '3-5', '3-4', 'regular', 'בינוני'],
+          SENIOR: ['senior', 'סניור', 'בכיר', '5+', '5-7', '5-8', '4-6', '6+', '7+', 'experienced'],
+          LEAD: ['lead', 'principal', 'staff', 'architect', 'מוביל', 'ראש', '8+', '10+', 'director', 'head'],
+        };
+        const patterns = expPatterns[filters.experienceLevel.toUpperCase()] || [filters.experienceLevel];
+        // Also search in title/description for key level keywords (longer patterns only to avoid false positives)
+        const descPatterns: Record<string, string[]> = {
+          ENTRY: ['entry level', 'entry-level', 'graduate', 'intern'],
+          JUNIOR: ['junior'],
+          MID: ['mid level', 'mid-level', 'midlevel'],
+          SENIOR: ['senior', 'סניור', 'בכיר'],
+          LEAD: ['lead', 'principal', 'staff engineer', 'architect', 'head of'],
+        };
+        const titleDescSearch = descPatterns[filters.experienceLevel.toUpperCase()] || [];
+
+        // Use AND to combine with other filters — experience must match at least one pattern
+        if (!where.AND) where.AND = [];
+        where.AND.push({
+          OR: [
+            ...patterns.map(p => ({
+              experienceLevel: { contains: p, mode: 'insensitive' as const },
+            })),
+            ...titleDescSearch.map(p => ({
+              title: { contains: p, mode: 'insensitive' as const },
+            })),
+            ...titleDescSearch.map(p => ({
+              description: { contains: p, mode: 'insensitive' as const },
+            })),
+          ],
+        });
       }
 
       if (filters.minScore !== undefined || filters.maxScore !== undefined) {
