@@ -111,6 +111,14 @@ const CATEGORY_LABELS: Record<string, { label: string; color: string }> = {
   UNKNOWN: { label: '', color: '' },
 }
 
+type TimeTab = 'new' | 'week' | 'all'
+
+const TIME_TABS: { key: TimeTab; label: string; datePosted?: string }[] = [
+  { key: 'new', label: 'חדשות', datePosted: '24h' },
+  { key: 'week', label: 'השבוע', datePosted: '7d' },
+  { key: 'all', label: 'כל המשרות' },
+]
+
 const JobBrowser = () => {
   const navigate = useNavigate()
   const [page, setPage] = useState(1)
@@ -119,6 +127,7 @@ const JobBrowser = () => {
   const [locationInput, setLocationInput] = useState('')
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [sortByMatch, setSortByMatch] = useState(false)
+  const [activeTab, setActiveTab] = useState<TimeTab>('all')
   const [filters, setFilters] = useState<JobFilters>({
     sort: 'createdAt',
     order: 'desc',
@@ -145,19 +154,50 @@ const JobBrowser = () => {
     return () => clearTimeout(timer)
   }, [locationInput])
 
+  // Merge tab's datePosted with manual filters (tab takes priority unless user picks a different date filter)
+  const tabDatePosted = TIME_TABS.find(t => t.key === activeTab)?.datePosted
+  const effectiveDatePosted = filters.datePosted || tabDatePosted
+
   const queryParams: JobFilters = {
     page,
     limit: 20,
     ...filters,
+    datePosted: effectiveDatePosted,
     search: debouncedSearch || undefined,
   }
 
   const { data: jobsResponse, isLoading, isError, refetch } = useQuery({
-    queryKey: ['jobs', page, filters, debouncedSearch],
+    queryKey: ['jobs', page, filters, debouncedSearch, activeTab],
     queryFn: async () => {
       const res = await jobsApi.list(queryParams)
       return res
     },
+  })
+
+  // Fetch counts for each tab so we can show badges
+  const { data: countNew } = useQuery({
+    queryKey: ['jobs-count-new'],
+    queryFn: async () => {
+      const res = await jobsApi.list({ page: 1, limit: 1, datePosted: '24h' })
+      return res?.meta?.total ?? 0
+    },
+    staleTime: 60_000,
+  })
+  const { data: countWeek } = useQuery({
+    queryKey: ['jobs-count-week'],
+    queryFn: async () => {
+      const res = await jobsApi.list({ page: 1, limit: 1, datePosted: '7d' })
+      return res?.meta?.total ?? 0
+    },
+    staleTime: 60_000,
+  })
+  const { data: countAll } = useQuery({
+    queryKey: ['jobs-count-all'],
+    queryFn: async () => {
+      const res = await jobsApi.list({ page: 1, limit: 1 })
+      return res?.meta?.total ?? 0
+    },
+    staleTime: 60_000,
   })
 
   const rawJobs: Job[] = jobsResponse?.data || []
@@ -216,8 +256,44 @@ const JobBrowser = () => {
     )
   }
 
+  const tabCounts: Record<TimeTab, number | undefined> = {
+    new: countNew,
+    week: countWeek,
+    all: countAll,
+  }
+
   return (
     <div className="space-y-4" dir="rtl">
+      {/* Time Tabs */}
+      <div className="flex gap-1 p-1 bg-gray-100 dark:bg-gray-800 rounded-xl w-fit">
+        {TIME_TABS.map((tab) => {
+          const isActive = activeTab === tab.key
+          const count = tabCounts[tab.key]
+          return (
+            <button
+              key={tab.key}
+              onClick={() => { setActiveTab(tab.key); setPage(1); setFilters(prev => ({ ...prev, datePosted: undefined })) }}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
+                isActive
+                  ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
+                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+              }`}
+            >
+              {tab.label}
+              {count != null && (
+                <span className={`text-xs px-1.5 py-0.5 rounded-full font-bold ${
+                  isActive
+                    ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400'
+                    : 'bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400'
+                }`}>
+                  {count}
+                </span>
+              )}
+            </button>
+          )
+        })}
+      </div>
+
       {/* Search Bar */}
       <div className="flex gap-2">
         <div className="relative flex-1">
@@ -277,17 +353,6 @@ const JobBrowser = () => {
           <option value="LEAD">Lead</option>
         </select>
 
-        <select
-          value={filters.datePosted || ''}
-          onChange={(e) => { setFilters({ ...filters, datePosted: e.target.value || undefined }); setPage(1) }}
-          className="px-3 py-2 rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
-        >
-          <option value="">זמן פרסום</option>
-          <option value="24h">24 שעות אחרונות</option>
-          <option value="7d">שבוע אחרון</option>
-          <option value="30d">חודש אחרון</option>
-        </select>
-
         {/* Sort by match toggle */}
         <button
           onClick={() => setSortByMatch(!sortByMatch)}
@@ -301,7 +366,7 @@ const JobBrowser = () => {
           מיון לפי התאמה
         </button>
 
-        {(filters.source || filters.locationType || filters.experienceLevel || filters.datePosted || filters.location) && (
+        {(filters.source || filters.locationType || filters.experienceLevel || filters.location || sortByMatch) && (
           <button
             onClick={() => {
               setFilters({ sort: 'createdAt', order: 'desc' })
@@ -312,7 +377,7 @@ const JobBrowser = () => {
             }}
             className="px-3 py-2 text-sm text-red-500 hover:text-red-600 font-medium"
           >
-            נקה הכל
+            נקה פילטרים
           </button>
         )}
       </div>
