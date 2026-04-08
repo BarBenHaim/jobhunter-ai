@@ -63,13 +63,11 @@ const Settings = () => {
   const [preferredWorkType, setPreferredWorkType] = useState<string>('')
   const [minExperience, setMinExperience] = useState<string>('')
 
-  // Fetch profile
-  const { data: profileData, isLoading } = useQuery({
+  // Fetch profile (shares cache with App.tsx)
+  const { data: profile, isLoading } = useQuery({
     queryKey: ['profile'],
     queryFn: () => profileApi.getProfile(),
   })
-
-  const profile = (profileData as any)?.data || profileData
 
   // Load profile data into form
   useEffect(() => {

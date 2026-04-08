@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   FileText,
@@ -39,15 +39,13 @@ const Profile = () => {
     queryFn: () => profileApi.getProfile(),
   })
 
-  // Load saved raw knowledge text into the textarea on first load
-  const [hasLoadedSaved, setHasLoadedSaved] = useState(false)
-  if (!hasLoadedSaved && profile) {
+  // Load saved raw knowledge text into the textarea when profile loads
+  useEffect(() => {
     const savedContent = (profile as any)?.rawKnowledge?.content
-    if (savedContent && !rawInput) {
+    if (savedContent) {
       setRawInput(savedContent)
     }
-    setHasLoadedSaved(true)
-  }
+  }, [profile])
 
   const sp = profile?.structuredProfile as any
   const hasStructuredData = sp && (sp.experience?.length > 0 || sp.skills || sp.education?.length > 0)

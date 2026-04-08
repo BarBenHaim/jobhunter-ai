@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
   Menu,
   X,
@@ -7,114 +7,17 @@ import {
   Briefcase,
   User,
   Settings,
-  Bell,
-  Zap,
-  FileBadge,
+  FileText,
   TrendingUp,
-  DollarSign,
+  LogOut,
+  ChevronLeft,
 } from 'lucide-react'
 import { useAppStore } from '@/stores/app.store'
-
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001/api'
-
-/** Cost Tracker Widget — shows today's API spend */
-const CostTrackerWidget = () => {
-  const [costs, setCosts] = useState<{
-    anthropic: { calls: number; cost: number }
-    serpapi: { calls: number; cost: number }
-    total: number
-  } | null>(null)
-  const [expanded, setExpanded] = useState(false)
-
-  useEffect(() => {
-    const fetchCosts = async () => {
-      try {
-        const res = await fetch(`${API_BASE}/costs/today`)
-        const data = await res.json()
-        if (data.success) setCosts(data.data)
-      } catch {
-        // silently fail
-      }
-    }
-    fetchCosts()
-    const interval = setInterval(fetchCosts, 30000) // refresh every 30s
-    return () => clearInterval(interval)
-  }, [])
-
-  if (!costs) return null
-
-  const totalDisplay = costs.total < 0.01
-    ? `$${costs.total.toFixed(4)}`
-    : `$${costs.total.toFixed(2)}`
-
-  return (
-    <div className="fixed bottom-4 left-4 z-50">
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className={`flex items-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-medium shadow-lg backdrop-blur-xl transition-all duration-300 ${
-          costs.total > 1
-            ? 'bg-warning-500/90 text-white'
-            : costs.total > 0.1
-              ? 'bg-amber-100/90 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200'
-              : 'bg-white/80 text-gray-700 dark:bg-gray-800/80 dark:text-gray-300'
-        } border border-gray-200/30 dark:border-gray-700/30 hover:scale-105`}
-      >
-        <DollarSign size={16} className={costs.total > 1 ? 'text-white' : 'text-green-600 dark:text-green-400'} />
-        <span>{totalDisplay}</span>
-        <span className="text-xs opacity-60">today</span>
-      </button>
-
-      {expanded && (
-        <div className="absolute bottom-full left-0 mb-2 w-64 rounded-2xl border border-gray-200/30 bg-white/95 p-4 shadow-xl backdrop-blur-xl dark:border-gray-700/30 dark:bg-gray-800/95 animate-fade-in">
-          <h4 className="mb-3 text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-            <DollarSign size={14} />
-            API Costs Today
-          </h4>
-
-          <div className="space-y-2.5">
-            <div className="flex items-center justify-between text-sm">
-              <div className="flex items-center gap-2">
-                <div className="h-2 w-2 rounded-full bg-purple-500" />
-                <span className="text-gray-600 dark:text-gray-400">Claude AI</span>
-              </div>
-              <div className="text-right">
-                <span className="font-medium text-gray-900 dark:text-white">
-                  ${costs.anthropic.cost < 0.01 ? costs.anthropic.cost.toFixed(4) : costs.anthropic.cost.toFixed(2)}
-                </span>
-                <span className="ml-1.5 text-xs text-gray-400">({costs.anthropic.calls} calls)</span>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between text-sm">
-              <div className="flex items-center gap-2">
-                <div className="h-2 w-2 rounded-full bg-blue-500" />
-                <span className="text-gray-600 dark:text-gray-400">SerpAPI</span>
-              </div>
-              <div className="text-right">
-                <span className="font-medium text-gray-900 dark:text-white">
-                  ${costs.serpapi.cost < 0.01 ? costs.serpapi.cost.toFixed(4) : costs.serpapi.cost.toFixed(2)}
-                </span>
-                <span className="ml-1.5 text-xs text-gray-400">({costs.serpapi.calls} calls)</span>
-              </div>
-            </div>
-
-            <div className="mt-2 border-t border-gray-200/50 pt-2 dark:border-gray-700/50">
-              <div className="flex items-center justify-between text-sm font-semibold">
-                <span className="text-gray-700 dark:text-gray-300">Total</span>
-                <span className="text-gray-900 dark:text-white">{totalDisplay}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
 
 const navItems = [
   { label: 'דשבורד', path: '/', icon: Home },
   { label: 'משרות', path: '/jobs', icon: Briefcase },
-  { label: 'קורות חיים', path: '/cv-generator', icon: FileBadge },
+  { label: 'קורות חיים', path: '/cv-generator', icon: FileText },
   { label: 'הגשות', path: '/pipeline', icon: TrendingUp },
   { label: 'פרופיל', path: '/profile', icon: User },
   { label: 'הגדרות', path: '/settings', icon: Settings },
@@ -122,155 +25,174 @@ const navItems = [
 
 export const Layout = ({ children }: { children: React.ReactNode }) => {
   const location = useLocation()
+  const navigate = useNavigate()
   const [mobileOpen, setMobileOpen] = useState(false)
-  const { sidebarCollapsed, setSidebarCollapsed, toasts, removeToast, systemHealthy } =
-    useAppStore()
+  const { user, toasts, removeToast } = useAppStore()
+
+  // Close mobile menu on route change
+  useEffect(() => {
+    setMobileOpen(false)
+  }, [location.pathname])
+
+  // Close mobile menu on resize to desktop
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth >= 1024) setMobileOpen(false)
+    }
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
+  const handleLogout = () => {
+    localStorage.removeItem('token')
+    window.location.href = '/'
+  }
+
+  const currentPageLabel = navItems.find(({ path }) => path === location.pathname)?.label || 'דשבורד'
 
   return (
-    <div className="flex h-screen bg-gradient-to-br from-gray-50 via-gray-50 to-primary-50/30 dark:from-gray-950 dark:via-gray-950 dark:to-primary-950/20">
-      {/* Mobile menu button */}
-      <button
-        onClick={() => setMobileOpen(!mobileOpen)}
-        className="fixed left-4 top-4 z-50 rounded-xl p-2.5 glass shadow-glass lg:hidden active:scale-95 transition-transform"
-      >
-        {mobileOpen ? <X size={22} /> : <Menu size={22} />}
-      </button>
+    <div className="flex h-screen bg-gray-50 dark:bg-gray-950" dir="rtl">
+      {/* Mobile header */}
+      <div className="fixed top-0 right-0 left-0 z-50 flex items-center justify-between bg-white/90 dark:bg-gray-900/90 backdrop-blur-xl border-b border-gray-200/50 dark:border-gray-800/50 px-4 py-3 lg:hidden">
+        <button
+          onClick={() => setMobileOpen(!mobileOpen)}
+          className="rounded-xl p-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+        >
+          {mobileOpen ? <X size={22} /> : <Menu size={22} />}
+        </button>
+        <h1 className="text-lg font-bold text-gray-900 dark:text-white">{currentPageLabel}</h1>
+        <div className="w-10" /> {/* spacer for centering */}
+      </div>
 
       {/* Sidebar */}
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex w-[260px] flex-col overflow-y-auto
-          border-r border-gray-200/30 bg-white/80 backdrop-blur-xl
-          transition-all duration-300 ease-out
-          dark:border-gray-800/30 dark:bg-gray-900/80
-          lg:relative lg:translate-x-0 ${
-          sidebarCollapsed ? '-translate-x-full' : ''
-        } ${mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}
+        className={`fixed inset-y-0 right-0 z-40 flex w-[260px] flex-col
+          bg-white dark:bg-gray-900 border-l border-gray-200/60 dark:border-gray-800/60
+          transition-transform duration-300 ease-out
+          lg:relative lg:translate-x-0
+          ${mobileOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'}`}
       >
         {/* Logo */}
-        <div className="flex items-center gap-3 px-6 py-5">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-primary-500 to-purple-500 shadow-md shadow-primary-500/20">
-            <Zap className="h-5 w-5 text-white" />
+        <div className="flex items-center gap-3 px-5 py-5 border-b border-gray-100 dark:border-gray-800/60">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary-500 to-purple-500 shadow-md shadow-primary-500/20">
+            <svg className="h-5 w-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+            </svg>
           </div>
-          <h1 className="text-lg font-bold gradient-text">JobHunter AI</h1>
+          <div>
+            <h1 className="text-base font-bold text-gray-900 dark:text-white">JobHunter AI</h1>
+            <p className="text-xs text-gray-500 dark:text-gray-500">חיפוש עבודה חכם</p>
+          </div>
         </div>
 
+        {/* User card */}
+        {user && (
+          <div className="mx-4 mt-4 p-3 rounded-xl bg-gray-50 dark:bg-gray-800/50">
+            <div className="flex items-center gap-3">
+              <div className="h-9 w-9 rounded-full bg-gradient-to-br from-primary-500 to-purple-500 flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
+                {(user as any).fullName?.charAt(0)?.toUpperCase() || '?'}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">
+                  {(user as any).fullName || 'משתמש'}
+                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-500 truncate">
+                  {(user as any).email || ''}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Nav items */}
-        <nav className="flex-1 space-y-1 px-3 py-4">
+        <nav className="flex-1 space-y-1 px-3 py-4 overflow-y-auto">
           {navItems.map(({ label, path, icon: Icon }) => {
             const isActive = location.pathname === path
             return (
               <Link
                 key={path}
                 to={path}
-                onClick={() => setMobileOpen(false)}
-                className={`group flex items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-medium transition-all duration-200 ${
+                className={`group flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200 ${
                   isActive
-                    ? 'bg-primary-50 text-primary-700 shadow-sm dark:bg-primary-900/30 dark:text-primary-300'
-                    : 'text-gray-600 hover:bg-gray-100/80 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800/50 dark:hover:text-gray-200'
+                    ? 'bg-primary-50 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300'
+                    : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800/50 dark:hover:text-gray-200'
                 }`}
               >
                 <Icon
                   size={18}
-                  className={`transition-transform duration-200 group-hover:scale-110 ${
-                    isActive ? 'text-primary-600 dark:text-primary-400' : ''
-                  }`}
+                  className={isActive ? 'text-primary-600 dark:text-primary-400' : ''}
                 />
                 {label}
-                {isActive && (
-                  <div className="ml-auto h-1.5 w-1.5 rounded-full bg-primary-500 animate-pulse-soft" />
-                )}
               </Link>
             )
           })}
         </nav>
 
-        {/* System health indicator */}
-        <div className="mx-3 mb-4">
-          <div
-            className={`flex items-center gap-2.5 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-300 ${
-              systemHealthy
-                ? 'bg-success-50/80 text-success-700 dark:bg-success-900/20 dark:text-success-300'
-                : 'bg-error-50/80 text-error-700 dark:bg-error-900/20 dark:text-error-300'
-            }`}
+        {/* Logout button */}
+        <div className="p-3 border-t border-gray-100 dark:border-gray-800/60">
+          <button
+            onClick={handleLogout}
+            className="flex items-center gap-3 w-full rounded-xl px-4 py-3 text-sm font-medium text-gray-500 hover:bg-red-50 hover:text-red-600 dark:text-gray-500 dark:hover:bg-red-900/20 dark:hover:text-red-400 transition-all"
           >
-            <div className={`h-2 w-2 rounded-full animate-pulse-soft ${systemHealthy ? 'bg-success-500' : 'bg-error-500'}`} />
-            {systemHealthy ? 'System Healthy' : 'System Issues'}
-          </div>
+            <LogOut size={18} />
+            התנתקות
+          </button>
         </div>
       </aside>
 
       {/* Main content */}
       <div className="flex flex-1 flex-col overflow-hidden">
-        {/* Top bar */}
-        <header className="border-b border-gray-200/30 bg-white/60 backdrop-blur-xl px-6 py-4 dark:border-gray-800/30 dark:bg-gray-900/60">
-          <div className="flex items-center justify-between">
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-white tracking-tight">
-              {navItems.find(({ path }) => path === location.pathname)?.label || 'Dashboard'}
-            </h2>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-                className="hidden rounded-xl p-2.5 text-gray-500 hover:bg-gray-100/80 hover:text-gray-700 transition-all duration-200 dark:hover:bg-gray-800/50 dark:text-gray-400 dark:hover:text-gray-200 lg:flex"
-              >
-                <Menu size={20} />
-              </button>
-              <button className="relative rounded-xl p-2.5 text-gray-500 hover:bg-gray-100/80 hover:text-gray-700 transition-all duration-200 dark:hover:bg-gray-800/50 dark:text-gray-400 dark:hover:text-gray-200">
-                <Bell size={20} />
-                {toasts.length > 0 && (
-                  <span className="absolute right-1.5 top-1.5 flex h-2.5 w-2.5">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary-400 opacity-75" />
-                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-primary-500" />
-                  </span>
-                )}
-              </button>
-            </div>
+        {/* Desktop top bar */}
+        <header className="hidden lg:flex items-center justify-between border-b border-gray-200/50 dark:border-gray-800/50 bg-white/80 dark:bg-gray-900/80 backdrop-blur-xl px-6 py-4">
+          <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+            {currentPageLabel}
+          </h2>
+          <div className="flex items-center gap-3">
+            {user && (
+              <span className="text-sm text-gray-500 dark:text-gray-400">
+                שלום, <span className="font-medium text-gray-700 dark:text-gray-300">{(user as any).fullName || 'משתמש'}</span>
+              </span>
+            )}
           </div>
         </header>
 
         {/* Content */}
-        <main className="flex-1 overflow-auto p-6">
-          <div className="animate-fade-in">
+        <main className="flex-1 overflow-auto p-4 md:p-6 pt-16 lg:pt-4">
+          <div className="max-w-7xl mx-auto animate-fade-in">
             {children}
           </div>
         </main>
       </div>
 
       {/* Toast notifications */}
-      <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-3">
-        {toasts.map(({ id, message, type }) => (
-          <div
-            key={id}
-            className={`animate-slide-up flex items-center gap-3 rounded-2xl px-5 py-3.5 text-white shadow-lg backdrop-blur-sm ${
-              type === 'success'
-                ? 'bg-success-500/90'
-                : type === 'error'
-                  ? 'bg-error-500/90'
-                  : type === 'warning'
-                    ? 'bg-warning-500/90'
-                    : 'bg-primary-500/90'
-            }`}
-          >
-            <span className="font-medium">{message}</span>
-            <button
-              onClick={() => removeToast(id)}
-              className="ml-auto rounded-lg p-0.5 hover:bg-white/20 transition-colors"
+      {toasts.length > 0 && (
+        <div className="fixed bottom-4 left-4 z-50 flex flex-col gap-2" dir="ltr">
+          {toasts.map(({ id, message, type }) => (
+            <div
+              key={id}
+              className={`animate-slide-up flex items-center gap-3 rounded-xl px-4 py-3 text-white shadow-lg text-sm font-medium ${
+                type === 'success' ? 'bg-green-500'
+                  : type === 'error' ? 'bg-red-500'
+                  : type === 'warning' ? 'bg-amber-500'
+                  : 'bg-primary-500'
+              }`}
             >
-              <X size={16} />
-            </button>
-          </div>
-        ))}
-      </div>
-
-      {/* Cost tracker widget */}
-      <CostTrackerWidget />
+              <span>{message}</span>
+              <button onClick={() => removeToast(id)} className="mr-1 rounded p-0.5 hover:bg-white/20">
+                <X size={14} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Mobile overlay */}
       {mobileOpen && (
         <div
-          className="fixed inset-0 z-30 bg-black/30 backdrop-blur-sm lg:hidden animate-fade-in"
+          className="fixed inset-0 z-30 bg-black/40 backdrop-blur-sm lg:hidden"
           onClick={() => setMobileOpen(false)}
         />
       )}
     </div>
   )
-              }
+}

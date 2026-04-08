@@ -197,7 +197,10 @@ export default function App() {
     queryKey: ['profile'],
     queryFn: () => profileApi.getProfile(),
     enabled: !!token && !isDemo,
-    retry: 1,
+    retry: 2,
+    staleTime: 5 * 60 * 1000, // 5 min — don't refetch unless stale
+    gcTime: 30 * 60 * 1000,   // keep in cache 30 min
+    refetchOnWindowFocus: false,
   })
 
   // Fetch settings to get theme preference (skip for demo mode)

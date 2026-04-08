@@ -4,31 +4,33 @@ import { UserProfile } from '@/types'
 export const profileApi = {
   async getProfile(): Promise<UserProfile> {
     const { data } = await apiClient.get('/profile')
-    return data
+    // Backend wraps in { success: true, data: {...} } — unwrap it
+    return data?.data || data
   },
 
   async updateProfile(profile: Partial<UserProfile>): Promise<UserProfile> {
     const { data } = await apiClient.patch('/profile', profile)
-    return data
+    return data?.data || data
   },
 
-  async submitKnowledge(knowledge: Record<string, any>): Promise<void> {
-    await apiClient.post('/profile/knowledge', knowledge)
+  async submitKnowledge(knowledge: Record<string, any>): Promise<any> {
+    const { data } = await apiClient.post('/profile/knowledge', knowledge)
+    return data?.data || data
   },
 
   async uploadCV(file: File): Promise<string> {
     const formData = new FormData()
     formData.append('file', file)
-    const { data } = await apiClient.post('/profile/cv', formData, {
+    const { data } = await apiClient.post('/profile/upload-cv', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
     })
-    return data.cvId
+    return (data?.data || data)?.cvId
   },
 
   async getGaps(personaId: string): Promise<{ gaps: string[] }> {
     const { data } = await apiClient.get(`/profile/gaps/${personaId}`)
-    return data
+    return data?.data || data
   },
 }
