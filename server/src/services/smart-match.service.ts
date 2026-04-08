@@ -362,8 +362,114 @@ const SKILL_SYNONYMS: Record<string, string[]> = {
 };
 
 /**
+ * Extract what the job ACTUALLY requires — parse the requirements/description
+ * to find "must have" vs "nice to have" skills.
+ */
+function extractJobRequirements(desc: string, reqs: string): {
+  mustHave: string[];
+  niceToHave: string[];
+  allMentioned: string[];
+} {
+  const fullText = `${desc} ${reqs}`.toLowerCase();
+  const mustHave: string[] = [];
+  const niceToHave: string[] = [];
+  const allMentioned: string[] = [];
+
+  // All tech terms we can detect
+  const ALL_TECH = [
+    'react', 'vue', 'angular', 'svelte', 'next.js', 'nuxt',
+    'node.js', 'express', 'fastify', 'nestjs', 'koa',
+    'typescript', 'javascript', 'python', 'java', 'c#', 'c++', 'go', 'golang', 'rust', 'ruby', 'php', 'scala', 'kotlin', 'swift', 'dart',
+    'aws', 'azure', 'gcp', 'google cloud',
+    'docker', 'kubernetes', 'terraform', 'ansible', 'helm',
+    'postgresql', 'mongodb', 'redis', 'mysql', 'elasticsearch', 'dynamodb', 'cassandra', 'neo4j',
+    'graphql', 'rest api', 'grpc', 'websocket',
+    'microservices', 'monolith', 'serverless', 'event-driven',
+    'ci/cd', 'jenkins', 'github actions', 'gitlab ci', 'circleci',
+    'git', 'linux', 'nginx', 'apache',
+    'rabbitmq', 'kafka', 'sqs', 'pubsub',
+    'html', 'css', 'sass', 'tailwind', 'bootstrap', 'material ui',
+    'webpack', 'vite', 'rollup', 'babel',
+    'prisma', 'sequelize', 'typeorm', 'mongoose', 'knex',
+    'jest', 'mocha', 'cypress', 'playwright', 'selenium', 'testing',
+    'figma', 'photoshop', 'sketch', 'ui/ux', 'design system',
+    'agile', 'scrum', 'kanban', 'jira', 'confluence',
+    'system design', 'architecture', 'design patterns', 'solid',
+    'machine learning', 'deep learning', 'nlp', 'computer vision', 'pytorch', 'tensorflow',
+    'react native', 'flutter', 'ios', 'android', 'mobile',
+    'devops', 'sre', 'monitoring', 'observability', 'datadog', 'grafana', 'prometheus',
+    'security', 'oauth', 'jwt', 'encryption',
+    'sql', 'nosql', 'data modeling',
+    'product management', 'project management',
+    'communication', 'leadership', 'mentoring', 'team management',
+    'english', 'hebrew',
+  ];
+
+  // Detect "must have" zones in the text
+  const mustHaveZones: string[] = [];
+  const niceToHaveZones: string[] = [];
+
+  // Split text into sections based on common headers
+  const mustPatterns = [
+    /(?:requirements|דרישות|must.?have|חובה|required|what you.?(?:ll )?need|what we.?(?:re )?looking for|qualifications|experience required|prerequisites|תנאי סף)[:\s\-]*([\s\S]*?)(?=(?:nice|bonus|plus|advantage|יתרון|preferred|$))/gi,
+  ];
+  const nicePatterns = [
+    /(?:nice.?to.?have|bonus|advantage|יתרון|preferred|plus|extra|good to have)[:\s\-]*([\s\S]*?)(?=(?:\n\n|\n[A-Z]|$))/gi,
+  ];
+
+  for (const pattern of mustPatterns) {
+    let match;
+    while ((match = pattern.exec(fullText)) !== null) {
+      mustHaveZones.push(match[1] || match[0]);
+    }
+  }
+  for (const pattern of nicePatterns) {
+    let match;
+    while ((match = pattern.exec(fullText)) !== null) {
+      niceToHaveZones.push(match[1] || match[0]);
+    }
+  }
+
+  const mustZoneText = mustHaveZones.join(' ');
+  const niceZoneText = niceToHaveZones.join(' ');
+
+  for (const tech of ALL_TECH) {
+    if (fullText.includes(tech)) {
+      allMentioned.push(tech);
+
+      if (mustZoneText.includes(tech)) {
+        mustHave.push(tech);
+      } else if (niceZoneText.includes(tech)) {
+        niceToHave.push(tech);
+      } else {
+        // If no clear zone, skills in title or first half of description are likely must-have
+        const firstHalf = fullText.substring(0, fullText.length * 0.6);
+        if (firstHalf.includes(tech)) {
+          mustHave.push(tech);
+        } else {
+          niceToHave.push(tech);
+        }
+      }
+    }
+  }
+
+  return {
+    mustHave: [...new Set(mustHave)],
+    niceToHave: [...new Set(niceToHave)],
+    allMentioned: [...new Set(allMentioned)],
+  };
+}
+
+/**
  * Score a single job against a user profile — LOCALLY, no API call.
- * This is designed to run on every scraped job for instant scoring.
+ *
+ * PHILOSOPHY: The score answers ONE question:
+ * "כמה סיכוי יש לי להתאים לתפקיד הזה ביחס ליכולות שלי?"
+ * = How likely am I to be a real professional fit for this job?
+ *
+ * This is NOT about "would I like the job" — it's about honest professional match.
+ * A score of 80+ means: you cover most requirements, right experience level, relevant background.
+ * A score of 40 means: significant gaps exist, you'd need to learn a lot.
  */
 export function scoreJobLocally(
   job: { title: string; company: string; description?: string; requirements?: string; location?: string; experienceLevel?: string },
@@ -377,7 +483,12 @@ export function scoreJobLocally(
   const jobLocation = (job.location || '').toLowerCase();
 
   // ----------------------------------------------------------
-  // 1. SKILL MATCH (0-100)
+  // STEP 1: Extract what the job ACTUALLY requires
+  // ----------------------------------------------------------
+  const jobReqs = extractJobRequirements(desc, reqs);
+
+  // ----------------------------------------------------------
+  // STEP 2: Build expanded set of candidate skills
   // ----------------------------------------------------------
   const allCandidateSkills = [
     ...profileAnalysis.coreSkills,
@@ -385,89 +496,203 @@ export function scoreJobLocally(
     ...profileAnalysis.techStack,
     ...profileAnalysis.languages,
   ];
-  // Expand with synonyms
+
   const expandedSkills = new Set<string>();
   for (const skill of allCandidateSkills) {
     expandedSkills.add(skill);
     const syns = SKILL_SYNONYMS[skill];
     if (syns) syns.forEach(s => expandedSkills.add(s));
-    // Also check if any synonym key contains our skill
     for (const [key, vals] of Object.entries(SKILL_SYNONYMS)) {
       if (vals.includes(skill)) expandedSkills.add(key);
     }
   }
 
-  const matchedSkills: string[] = [];
-  const mentionedInJob: string[] = [];
+  // ----------------------------------------------------------
+  // STEP 3: REQUIREMENTS COVERAGE (50% of total score)
+  // "How many of the job's actual requirements do I meet?"
+  // This is the CORE of the score — honest gap analysis.
+  // ----------------------------------------------------------
+  const matchedMustHave: string[] = [];
+  const missingMustHave: string[] = [];
+  const matchedNiceToHave: string[] = [];
+  const missingNiceToHave: string[] = [];
 
-  // Extract skills mentioned in the job
-  for (const skill of expandedSkills) {
-    if (fullText.includes(skill)) {
-      matchedSkills.push(skill);
+  for (const skill of jobReqs.mustHave) {
+    if (expandedSkills.has(skill)) {
+      matchedMustHave.push(skill);
+    } else {
+      // Check if we have a synonym
+      let found = false;
+      for (const [key, vals] of Object.entries(SKILL_SYNONYMS)) {
+        if ((key === skill || vals.includes(skill)) && (expandedSkills.has(key) || vals.some(v => expandedSkills.has(v)))) {
+          matchedMustHave.push(skill);
+          found = true;
+          break;
+        }
+      }
+      if (!found) missingMustHave.push(skill);
     }
   }
 
-  // Also find skills the job wants that the candidate doesn't have
-  const missingSkills: string[] = [];
-  const COMMON_TECH_TERMS = [
-    'react', 'vue', 'angular', 'node.js', 'python', 'java', 'c#', 'go', 'rust',
-    'typescript', 'javascript', 'aws', 'azure', 'gcp', 'docker', 'kubernetes',
-    'postgresql', 'mongodb', 'redis', 'graphql', 'rest', 'microservices',
-    'terraform', 'jenkins', 'git', 'linux', 'agile', 'scrum',
-    'machine learning', 'deep learning', 'nlp', 'computer vision',
-    'swift', 'kotlin', 'flutter', 'react native',
-    'elasticsearch', 'kafka', 'rabbitmq', 'nginx',
-    'ci/cd', 'devops', 'sre',
-  ];
-  for (const term of COMMON_TECH_TERMS) {
-    if (fullText.includes(term) && !expandedSkills.has(term)) {
-      missingSkills.push(term);
+  for (const skill of jobReqs.niceToHave) {
+    if (expandedSkills.has(skill)) {
+      matchedNiceToHave.push(skill);
+    } else {
+      let found = false;
+      for (const [key, vals] of Object.entries(SKILL_SYNONYMS)) {
+        if ((key === skill || vals.includes(skill)) && (expandedSkills.has(key) || vals.some(v => expandedSkills.has(v)))) {
+          matchedNiceToHave.push(skill);
+          found = true;
+          break;
+        }
+      }
+      if (!found) missingNiceToHave.push(skill);
     }
   }
 
-  // Calculate skill score
-  const totalRelevantSkills = matchedSkills.length + missingSkills.length;
-  let skillScore = totalRelevantSkills > 0
-    ? Math.round((matchedSkills.length / totalRelevantSkills) * 100)
-    : 50; // If no specific skills mentioned, neutral score
+  // Calculate requirements coverage score
+  const totalMustHave = matchedMustHave.length + missingMustHave.length;
+  const totalNiceToHave = matchedNiceToHave.length + missingNiceToHave.length;
 
-  // Boost if many core skills match
-  if (matchedSkills.length >= 5) skillScore = Math.min(100, skillScore + 10);
+  let requirementsCoverage: number;
+  if (totalMustHave > 0) {
+    // Must-have coverage is critical (80% of this sub-score), nice-to-have less so (20%)
+    const mustHaveRatio = matchedMustHave.length / totalMustHave;
+    const niceRatio = totalNiceToHave > 0 ? matchedNiceToHave.length / totalNiceToHave : 0.5;
+    requirementsCoverage = Math.round(mustHaveRatio * 80 + niceRatio * 20);
+  } else if (totalNiceToHave > 0) {
+    requirementsCoverage = Math.round((matchedNiceToHave.length / totalNiceToHave) * 100);
+  } else {
+    // Job doesn't list specific tech — use general skill overlap with description
+    const descSkillHits = [...expandedSkills].filter(s => fullText.includes(s)).length;
+    const allDescSkills = jobReqs.allMentioned.length;
+    if (allDescSkills > 0) {
+      requirementsCoverage = Math.round((descSkillHits / Math.max(allDescSkills, descSkillHits)) * 100);
+    } else {
+      requirementsCoverage = 40; // Unknown — can't assess, neutral-low
+    }
+  }
+
+  // Penalize hard if missing many must-haves
+  if (totalMustHave >= 3 && missingMustHave.length >= Math.ceil(totalMustHave * 0.6)) {
+    requirementsCoverage = Math.min(requirementsCoverage, 35); // You're missing >60% of must-haves
+  }
 
   // ----------------------------------------------------------
-  // 2. ROLE RELEVANCE (0-100)
+  // STEP 4: EXPERIENCE & SENIORITY FIT (25% of total score)
+  // "Am I at the right career level for this role?"
   // ----------------------------------------------------------
-  let roleScore = 30; // Base — at least somewhat tech
+  let experienceScore = 60; // Default: moderate — can't tell
 
-  // Check if job title directly matches target roles
+  const jobExpLevel = (job.experienceLevel || '').toLowerCase();
+  const years = profileAnalysis.experienceYears;
+
+  // Parse ALL mentions of required years in the job text
+  const yearsPatterns = fullText.matchAll(/(\d+)\+?\s*(?:years?|שנ|שנות|שנים)/g);
+  let jobRequiredYears = 0;
+  for (const m of yearsPatterns) {
+    const y = parseInt(m[1]);
+    if (y > jobRequiredYears && y <= 20) jobRequiredYears = y; // Take the highest reasonable requirement
+  }
+
+  if (jobRequiredYears > 0) {
+    if (years >= jobRequiredYears && years <= jobRequiredYears + 4) {
+      experienceScore = 95; // Sweet spot — meets requirements, not overqualified
+    } else if (years >= jobRequiredYears) {
+      experienceScore = 80; // Overqualified slightly but still good
+      if (years > jobRequiredYears + 7) experienceScore = 55; // Significantly overqualified
+    } else if (years >= jobRequiredYears - 1) {
+      experienceScore = 70; // Close — could stretch
+    } else if (years >= jobRequiredYears - 2) {
+      experienceScore = 45; // Noticeable gap
+    } else {
+      experienceScore = Math.max(10, 30 - (jobRequiredYears - years) * 5); // Major gap
+    }
+  }
+
+  // Check seniority level keywords in the title
+  const seniorityMap: Record<string, number> = {
+    'intern': 0, 'סטודנט': 0, 'student': 0,
+    'junior': 1, 'ג׳וניור': 1, 'entry': 1,
+    'mid': 2, 'middle': 2, 'regular': 2, 'בינוני': 2,
+    'senior': 3, 'סניור': 3, 'בכיר': 3, 'experienced': 3, 'sr.': 3, 'sr ': 3,
+    'lead': 4, 'principal': 4, 'staff': 4, 'architect': 4, 'מוביל': 4, 'head': 4,
+    'director': 5, 'vp': 5, 'cto': 5, 'manager': 4,
+  };
+
+  const candidateLevelNum = { JUNIOR: 1, MID: 2, SENIOR: 3, LEAD: 4 }[profileAnalysis.seniorityLevel] || 2;
+  let detectedJobLevel = -1;
+
+  for (const [keyword, level] of Object.entries(seniorityMap)) {
+    if (title.includes(keyword) || jobExpLevel.includes(keyword)) {
+      detectedJobLevel = level;
+      break;
+    }
+  }
+
+  if (detectedJobLevel >= 0) {
+    const diff = candidateLevelNum - detectedJobLevel;
+    if (diff === 0) {
+      experienceScore = Math.max(experienceScore, 95); // Exact level match
+    } else if (diff === 1) {
+      experienceScore = Math.max(experienceScore, 70); // Slight step down — overqualified but OK
+    } else if (diff === -1) {
+      experienceScore = Math.max(experienceScore, 60); // One level up — stretch, realistic
+    } else if (diff >= 2) {
+      experienceScore = Math.min(experienceScore, 45); // Way overqualified
+    } else if (diff <= -2) {
+      experienceScore = Math.min(experienceScore, 25); // Under-leveled significantly
+    }
+  }
+
+  // ----------------------------------------------------------
+  // STEP 5: ROLE ALIGNMENT (20% of total score)
+  // "Is this the kind of work I actually do / can do?"
+  // ----------------------------------------------------------
+  let roleScore = 20; // Base: tech job but unclear match
+
   const targetRoles = profileAnalysis.targetRoles.map(r => r.toLowerCase());
+  const previousRoles = profileAnalysis.previousRoles;
+
+  // Direct title match with target roles
   for (const target of targetRoles) {
-    if (title.includes(target) || target.includes(title.split(' ')[0])) {
+    if (title.includes(target) || target.includes(title.replace(/senior |junior |lead |sr\.? |jr\.? /g, '').trim())) {
       roleScore = 95;
       break;
     }
-    // Partial match
-    const words = target.split(/\s+/);
-    const matchCount = words.filter(w => title.includes(w)).length;
-    if (matchCount >= Math.ceil(words.length / 2)) {
-      roleScore = Math.max(roleScore, 80);
+    // Multi-word partial match — e.g. "Full Stack" matches "Full Stack Developer"
+    const words = target.split(/\s+/).filter(w => w.length > 2);
+    if (words.length > 0) {
+      const matchCount = words.filter(w => title.includes(w)).length;
+      if (matchCount >= Math.ceil(words.length * 0.6)) {
+        roleScore = Math.max(roleScore, 85);
+      }
     }
   }
 
-  // Check if job title matches previous roles
-  for (const prevRole of profileAnalysis.previousRoles) {
-    if (title.includes(prevRole) || prevRole.includes(title)) {
-      roleScore = Math.max(roleScore, 85);
+  // Match with previous roles
+  for (const prevRole of previousRoles) {
+    const prev = prevRole.toLowerCase();
+    if (title.includes(prev) || prev.includes(title.replace(/senior |junior |lead |sr\.? |jr\.? /g, '').trim())) {
+      roleScore = Math.max(roleScore, 90);
+    }
+    // Partial word match
+    const words = prev.split(/\s+/).filter(w => w.length > 2);
+    if (words.length > 0) {
+      const matchCount = words.filter(w => title.includes(w)).length;
+      if (matchCount >= Math.ceil(words.length * 0.5)) {
+        roleScore = Math.max(roleScore, 75);
+      }
     }
   }
 
-  // Check role adjacency
-  for (const prevRole of [...profileAnalysis.previousRoles, ...targetRoles]) {
+  // Role adjacency — someone who did X can realistically do Y
+  for (const prevRole of [...previousRoles.map(r => r.toLowerCase()), ...targetRoles]) {
     for (const [roleKey, adjacentRoles] of Object.entries(ROLE_ADJACENCY)) {
       if (prevRole.includes(roleKey) || roleKey.includes(prevRole)) {
         for (const adj of adjacentRoles) {
           if (title.includes(adj)) {
-            roleScore = Math.max(roleScore, 70); // Adjacent role match
+            roleScore = Math.max(roleScore, 65); // Adjacent = realistic but needs adaptation
             break;
           }
         }
@@ -475,61 +700,25 @@ export function scoreJobLocally(
     }
   }
 
-  // Check if job is in a matching domain
+  // Domain overlap — if job is in a domain you've worked in, boost
+  let domainOverlap = false;
   for (const domain of profileAnalysis.domains) {
     if (fullText.includes(domain)) {
-      roleScore = Math.max(roleScore, Math.min(roleScore + 15, 100));
+      domainOverlap = true;
+      roleScore = Math.max(roleScore, Math.min(roleScore + 15, 85));
     }
   }
 
-  // ----------------------------------------------------------
-  // 3. EXPERIENCE LEVEL MATCH (0-100)
-  // ----------------------------------------------------------
-  let experienceScore = 70; // Default neutral
-
-  const jobExpLevel = (job.experienceLevel || '').toLowerCase();
-  const years = profileAnalysis.experienceYears;
-
-  // Parse job's experience requirements
-  const expYearsMatch = fullText.match(/(\d+)\+?\s*(?:years?|שנ)/);
-  const jobRequiredYears = expYearsMatch ? parseInt(expYearsMatch[1]) : 0;
-
-  if (jobRequiredYears > 0) {
-    if (years >= jobRequiredYears) {
-      experienceScore = 90; // Meets or exceeds
-      if (years > jobRequiredYears + 5) experienceScore = 70; // Overqualified
-    } else if (years >= jobRequiredYears - 1) {
-      experienceScore = 75; // Close enough - stretch opportunity
-    } else {
-      experienceScore = Math.max(20, 70 - (jobRequiredYears - years) * 15);
-    }
-  }
-
-  // Check seniority level keywords
-  const seniorityMap: Record<string, number> = {
-    'junior': 1, 'ג׳וניור': 1, 'entry': 1, 'intern': 0, 'סטודנט': 0,
-    'mid': 2, 'middle': 2, 'regular': 2, 'בינוני': 2,
-    'senior': 3, 'סניור': 3, 'בכיר': 3, 'experienced': 3,
-    'lead': 4, 'principal': 4, 'staff': 4, 'architect': 4, 'מוביל': 4, 'head': 4,
-    'director': 5, 'vp': 5, 'cto': 5,
-  };
-
-  const candidateLevelNum = { JUNIOR: 1, MID: 2, SENIOR: 3, LEAD: 4 }[profileAnalysis.seniorityLevel] || 2;
-
-  for (const [keyword, level] of Object.entries(seniorityMap)) {
-    if (title.includes(keyword) || jobExpLevel.includes(keyword)) {
-      const diff = Math.abs(candidateLevelNum - level);
-      if (diff === 0) experienceScore = Math.max(experienceScore, 95);
-      else if (diff === 1) experienceScore = Math.max(experienceScore, 75); // Stretch or slight step down
-      else if (diff >= 2) experienceScore = Math.min(experienceScore, 40);
-      break;
-    }
+  // If role score is still very low but skills match is high, give partial credit
+  // (means: the tools are right even if the title is different)
+  if (roleScore <= 30 && requirementsCoverage >= 60) {
+    roleScore = 45; // "Different title, similar skillset"
   }
 
   // ----------------------------------------------------------
-  // 4. LOCATION MATCH (0-100)
+  // STEP 6: LOCATION (5% of total — minor factor)
   // ----------------------------------------------------------
-  let locationScore = 70; // Default neutral
+  let locationScore = 70;
 
   const preferredLocations = (preferences?.preferredLocations || []).map((l: string) => l.toLowerCase());
   const preferredWorkType = (preferences?.preferredWorkType || '').toLowerCase();
@@ -540,86 +729,108 @@ export function scoreJobLocally(
     );
     locationScore = locationMatches ? 95 : 50;
   }
-
-  // Check remote/hybrid preference
-  if (preferredWorkType) {
-    if (preferredWorkType === 'remote' && (fullText.includes('remote') || fullText.includes('מרחוק'))) {
-      locationScore = Math.max(locationScore, 95);
-    }
-    if (preferredWorkType === 'hybrid' && (fullText.includes('hybrid') || fullText.includes('היברידי'))) {
-      locationScore = Math.max(locationScore, 90);
-    }
+  if (preferredWorkType === 'remote' && (fullText.includes('remote') || fullText.includes('מרחוק'))) {
+    locationScore = Math.max(locationScore, 95);
+  }
+  if (preferredWorkType === 'hybrid' && (fullText.includes('hybrid') || fullText.includes('היברידי'))) {
+    locationScore = Math.max(locationScore, 90);
   }
 
   // ----------------------------------------------------------
-  // 5. GREEN FLAGS & RED FLAGS
+  // STEP 7: OVERALL SCORE — weighted by professional fit
+  // ----------------------------------------------------------
+  const overallScore = Math.round(
+    requirementsCoverage * 0.50 +  // 50%: Do I meet the requirements?
+    experienceScore * 0.25 +       // 25%: Am I at the right level?
+    roleScore * 0.20 +             // 20%: Is this my kind of role?
+    locationScore * 0.05           //  5%: Location (minor)
+  );
+
+  // ----------------------------------------------------------
+  // STEP 8: GREEN FLAGS & RED FLAGS
   // ----------------------------------------------------------
   const greenFlags: string[] = [];
   const redFlags: string[] = [];
 
-  // Green flags
-  if (matchedSkills.length >= 4) greenFlags.push(`${matchedSkills.length} כישורים תואמים`);
-  if (roleScore >= 80) greenFlags.push('תפקיד מתאים מאוד לרקע שלך');
-  if (experienceScore >= 85) greenFlags.push('רמת ניסיון מתאימה');
+  if (matchedMustHave.length >= 3) greenFlags.push(`עומד ב-${matchedMustHave.length}/${totalMustHave} דרישות חובה`);
+  if (matchedMustHave.length === totalMustHave && totalMustHave > 0) greenFlags.push('עומד בכל דרישות החובה!');
+  if (roleScore >= 85) greenFlags.push('התפקיד מתאים לרקע המקצועי שלך');
+  if (experienceScore >= 85) greenFlags.push('רמת הניסיון בדיוק מתאימה');
+  if (domainOverlap) greenFlags.push('ניסיון בתחום הרלוונטי');
 
-  // Check for top companies
   const TOP_COMPANIES = ['google', 'microsoft', 'meta', 'amazon', 'apple', 'netflix', 'openai', 'anthropic',
-    'stripe', 'monday', 'wix', 'check point', 'cyberark', 'palo alto', 'ironSource', 'fiverr',
+    'stripe', 'monday', 'wix', 'check point', 'cyberark', 'palo alto', 'fiverr',
     'similarweb', 'gett', 'via', 'mobileye', 'intel', 'nvidia', 'qualcomm'];
   if (TOP_COMPANIES.some(c => (job.company || '').toLowerCase().includes(c))) {
-    greenFlags.push('חברה מובילה בתעשייה');
+    greenFlags.push('חברה מובילה');
   }
 
-  if (fullText.includes('growth') || fullText.includes('צמיחה')) greenFlags.push('הזדמנות לצמיחה');
-  if (fullText.includes('mentor') || fullText.includes('הכשרה')) greenFlags.push('אפשרויות הכשרה');
-
-  // Red flags
-  if (missingSkills.length >= 5) redFlags.push(`חסרים ${missingSkills.length} כישורים טכניים`);
-  if (experienceScore < 40) redFlags.push('פער משמעותי ברמת הניסיון');
-  if (roleScore < 40) redFlags.push('תפקיד לא קשור לתחום שלך');
+  if (missingMustHave.length >= 3) redFlags.push(`חסרים ${missingMustHave.length} דרישות חובה: ${missingMustHave.slice(0, 3).join(', ')}`);
+  else if (missingMustHave.length > 0) redFlags.push(`חסרים: ${missingMustHave.join(', ')}`);
+  if (experienceScore <= 30) redFlags.push('פער ניסיון משמעותי');
+  if (detectedJobLevel >= 0 && candidateLevelNum - detectedJobLevel <= -2) redFlags.push('רמת הבכירות גבוהה מידי');
+  if (detectedJobLevel >= 0 && candidateLevelNum - detectedJobLevel >= 3) redFlags.push('תפקיד מתחת לרמה שלך');
+  if (roleScore <= 25) redFlags.push('תחום שונה מהניסיון שלך');
 
   // ----------------------------------------------------------
-  // 6. OVERALL SCORE (weighted)
+  // STEP 9: CATEGORY & REASONING
   // ----------------------------------------------------------
-  const overallScore = Math.round(
-    skillScore * 0.35 +
-    roleScore * 0.30 +
-    experienceScore * 0.20 +
-    locationScore * 0.15
-  );
-
-  // Determine category
   let category: SmartScore['category'];
-  if (overallScore >= 85) category = 'PERFECT';
-  else if (overallScore >= 72) category = 'STRONG';
-  else if (overallScore >= 60) category = 'GOOD';
-  else if (overallScore >= 48) category = 'POSSIBLE';
-  else if (overallScore >= 35) category = 'STRETCH';
+  if (overallScore >= 80) category = 'PERFECT';
+  else if (overallScore >= 65) category = 'STRONG';
+  else if (overallScore >= 50) category = 'GOOD';
+  else if (overallScore >= 38) category = 'POSSIBLE';
+  else if (overallScore >= 25) category = 'STRETCH';
   else category = 'WEAK';
 
-  // ----------------------------------------------------------
-  // 7. REASONING (Hebrew)
-  // ----------------------------------------------------------
+  // Build honest reasoning in Hebrew
   let reasoning = '';
-  if (category === 'PERFECT' || category === 'STRONG') {
-    reasoning = `משרה מתאימה מאוד! ${matchedSkills.length > 0 ? `נמצאו ${matchedSkills.length} כישורים תואמים` : ''}${roleScore >= 80 ? ', התפקיד מתאים לרקע שלך' : ''}${experienceScore >= 80 ? ', רמת הניסיון מתאימה' : ''}.`;
-  } else if (category === 'GOOD' || category === 'POSSIBLE') {
-    reasoning = `משרה עם פוטנציאל. ${matchedSkills.length > 0 ? `${matchedSkills.length} כישורים תואמים` : ''}${missingSkills.length > 0 ? `, חסרים ${missingSkills.length} כישורים` : ''}. ${roleScore >= 60 ? 'התפקיד קרוב לתחום שלך' : 'כדאי לבדוק התאמה'}.`;
+  const allMatched = [...matchedMustHave, ...matchedNiceToHave];
+  const allMissing = [...missingMustHave, ...missingNiceToHave];
+
+  if (category === 'PERFECT') {
+    reasoning = `התאמה מצוינת! `;
+    if (totalMustHave > 0) reasoning += `אתה עומד ב-${matchedMustHave.length}/${totalMustHave} דרישות חובה. `;
+    if (roleScore >= 80) reasoning += `התפקיד ישירות בתחום שלך. `;
+    if (experienceScore >= 80) reasoning += `רמת הניסיון מתאימה. `;
+    reasoning += `סיכויים טובים מאוד!`;
+  } else if (category === 'STRONG') {
+    reasoning = `התאמה חזקה. `;
+    if (totalMustHave > 0) reasoning += `אתה עומד ב-${matchedMustHave.length}/${totalMustHave} דרישות חובה. `;
+    if (allMissing.length > 0) reasoning += `חסרים: ${allMissing.slice(0, 3).join(', ')}. `;
+    reasoning += `שווה להגיש!`;
+  } else if (category === 'GOOD') {
+    reasoning = `התאמה סבירה. `;
+    if (allMatched.length > 0) reasoning += `יש לך ${allMatched.length} כישורים מתאימים. `;
+    if (missingMustHave.length > 0) reasoning += `חסרים ${missingMustHave.length} דרישות חובה (${missingMustHave.slice(0, 2).join(', ')}). `;
+    if (roleScore >= 60) reasoning += `התפקיד קרוב לתחום שלך. `;
+    else reasoning += `התפקיד דורש הסתגלות. `;
+  } else if (category === 'POSSIBLE') {
+    reasoning = `יש פער — `;
+    if (missingMustHave.length > 0) reasoning += `חסרים ${missingMustHave.length}/${totalMustHave} דרישות חובה. `;
+    if (experienceScore < 50) reasoning += `רמת הניסיון לא מספיקה. `;
+    if (roleScore < 50) reasoning += `התפקיד שונה מהרקע שלך. `;
+    reasoning += `אפשרי אם מוכנים ללמוד.`;
   } else if (category === 'STRETCH') {
-    reasoning = `משרה מאתגרת — דורשת למידה. ${missingSkills.length > 0 ? `חסרים ${missingSkills.length} כישורים` : ''}, אך יכולה לקדם את הקריירה שלך.`;
+    reasoning = `משרה מאתגרת — פערים משמעותיים. `;
+    if (missingMustHave.length > 0) reasoning += `חסרים ${missingMustHave.length} דרישות חובה. `;
+    if (experienceScore < 40) reasoning += `פער ניסיון. `;
+    reasoning += `דורש למידה עצמית משמעותית.`;
   } else {
-    reasoning = `התאמה נמוכה — ${redFlags.length > 0 ? redFlags[0] : 'משרה לא בתחום שלך'}.`;
+    reasoning = `התאמה נמוכה`;
+    if (redFlags.length > 0) reasoning += ` — ${redFlags[0]}`;
+    reasoning += `. כנראה לא כדאי להגיש.`;
   }
 
   return {
     score: overallScore,
-    skillMatch: skillScore,
+    skillMatch: requirementsCoverage,
     experienceMatch: experienceScore,
     roleRelevance: roleScore,
     locationMatch: locationScore,
-    reasoning,
-    matchedSkills: [...new Set(matchedSkills)].slice(0, 10),
-    missingSkills: [...new Set(missingSkills)].slice(0, 8),
+    reasoning: reasoning.trim(),
+    matchedSkills: [...new Set([...matchedMustHave, ...matchedNiceToHave])].slice(0, 10),
+    missingSkills: [...new Set([...missingMustHave, ...missingNiceToHave])].slice(0, 8),
     greenFlags,
     redFlags,
     category,

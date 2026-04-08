@@ -474,9 +474,9 @@ const JobBrowser = () => {
                         {smartData.hasSmartScore && (
                           <div className="grid grid-cols-2 gap-2 mt-2">
                             {[
-                              { label: 'כישורים', value: job.rawData?.skillMatch },
-                              { label: 'ניסיון', value: job.rawData?.experienceMatch },
-                              { label: 'רלוונטיות תפקיד', value: job.rawData?.roleRelevance },
+                              { label: 'כיסוי דרישות', value: job.rawData?.skillMatch },
+                              { label: 'התאמת ניסיון', value: job.rawData?.experienceMatch },
+                              { label: 'התאמת תפקיד', value: job.rawData?.roleRelevance },
                             ].filter(b => b.value != null).map((bar) => (
                               <div key={bar.label}>
                                 <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mb-0.5">
