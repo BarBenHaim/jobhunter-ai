@@ -442,9 +442,11 @@ function extractJobRequirements(desc: string, reqs: string): {
       } else if (niceZoneText.includes(tech)) {
         niceToHave.push(tech);
       } else {
-        // If no clear zone, skills in title or first half of description are likely must-have
-        const firstHalf = fullText.substring(0, fullText.length * 0.6);
-        if (firstHalf.includes(tech)) {
+        // No clear must-have/nice-to-have zone detected.
+        // In reality, job descriptions are WISH LISTS — most listed skills are
+        // nice-to-have, only 3-5 are truly critical. Without clear markers,
+        // only put skills found in the TITLE as must-have; the rest are nice-to-have.
+        if (title.includes(tech)) {
           mustHave.push(tech);
         } else {
           niceToHave.push(tech);
@@ -551,38 +553,63 @@ export function scoreJobLocally(
   }
 
   // Calculate requirements coverage score
+  //
+  // KEY INSIGHT: Job descriptions are wish lists. Even a PERFECT candidate
+  // typically matches 60-70% of listed technologies. A score of 100 would mean
+  // you literally know every single thing they mentioned — almost never happens.
+  //
+  // Real-world calibration:
+  //   Match 80%+ of must-haves → you're a top candidate (score ~90)
+  //   Match 60%+ of must-haves → strong candidate, worth applying (score ~75)
+  //   Match 40%+ of must-haves → decent shot, gaps are learnable (score ~55)
+  //   Match <30% of must-haves → significant gaps (score ~30)
+  //
   const totalMustHave = matchedMustHave.length + missingMustHave.length;
   const totalNiceToHave = matchedNiceToHave.length + missingNiceToHave.length;
+  const totalAll = matchedMustHave.length + matchedNiceToHave.length + missingMustHave.length + missingNiceToHave.length;
 
   let requirementsCoverage: number;
+
   if (totalMustHave > 0) {
-    // Must-have coverage is critical (80% of this sub-score), nice-to-have less so (20%)
     const mustHaveRatio = matchedMustHave.length / totalMustHave;
     const niceRatio = totalNiceToHave > 0 ? matchedNiceToHave.length / totalNiceToHave : 0.5;
-    requirementsCoverage = Math.round(mustHaveRatio * 80 + niceRatio * 20);
+
+    // Apply realistic curve: 60% raw coverage → 75 score (strong candidate)
+    const rawMustScore = mustHaveRatio * 100;
+    const curvedMustScore = rawMustScore <= 30
+      ? rawMustScore * 0.8                          // Below 30% → harsh
+      : 30 * 0.8 + (rawMustScore - 30) * 1.15;     // Above 30% → generous curve
+    const clampedMust = Math.min(100, curvedMustScore);
+
+    // Must-haves 70%, nice-to-haves 30%
+    requirementsCoverage = Math.round(clampedMust * 0.70 + niceRatio * 100 * 0.30);
   } else if (totalNiceToHave > 0) {
-    requirementsCoverage = Math.round((matchedNiceToHave.length / totalNiceToHave) * 100);
+    // No clear must-haves — all skills treated as nice-to-have (less harsh)
+    const niceRatio = matchedNiceToHave.length / totalNiceToHave;
+    // Curve: matching half of nice-to-haves = pretty good (70+)
+    requirementsCoverage = Math.round(Math.min(100, niceRatio * 100 * 1.2 + 15));
   } else {
-    // Job doesn't list specific tech — use general skill overlap with description
+    // Job doesn't list specific tech — use general skill overlap
     const descSkillHits = [...expandedSkills].filter(s => fullText.includes(s)).length;
     const allDescSkills = jobReqs.allMentioned.length;
     if (allDescSkills > 0) {
-      requirementsCoverage = Math.round((descSkillHits / Math.max(allDescSkills, descSkillHits)) * 100);
+      const ratio = descSkillHits / Math.max(allDescSkills, descSkillHits);
+      requirementsCoverage = Math.round(Math.min(100, ratio * 100 * 1.2 + 15));
     } else {
-      requirementsCoverage = 40; // Unknown — can't assess, neutral-low
+      requirementsCoverage = 55; // Unknown — neutral, not punishing
     }
   }
 
-  // Penalize hard if missing many must-haves
-  if (totalMustHave >= 3 && missingMustHave.length >= Math.ceil(totalMustHave * 0.6)) {
-    requirementsCoverage = Math.min(requirementsCoverage, 35); // You're missing >60% of must-haves
+  // Only penalize hard if missing ALL or nearly all must-haves
+  if (totalMustHave >= 4 && matchedMustHave.length <= 1) {
+    requirementsCoverage = Math.min(requirementsCoverage, 25);
   }
 
   // ----------------------------------------------------------
   // STEP 4: EXPERIENCE & SENIORITY FIT (25% of total score)
   // "Am I at the right career level for this role?"
   // ----------------------------------------------------------
-  let experienceScore = 60; // Default: moderate — can't tell
+  let experienceScore = 65; // Default: can't detect level → assume neutral-positive (keywords were tailored)
 
   const jobExpLevel = (job.experienceLevel || '').toLowerCase();
   const years = profileAnalysis.experienceYears;
@@ -649,7 +676,7 @@ export function scoreJobLocally(
   // STEP 5: ROLE ALIGNMENT (20% of total score)
   // "Is this the kind of work I actually do / can do?"
   // ----------------------------------------------------------
-  let roleScore = 20; // Base: tech job but unclear match
+  let roleScore = 40; // Base: job was found via profile-tailored keywords, so there's baseline relevance
 
   const targetRoles = profileAnalysis.targetRoles.map(r => r.toLowerCase());
   const previousRoles = profileAnalysis.previousRoles;
@@ -709,10 +736,13 @@ export function scoreJobLocally(
     }
   }
 
-  // If role score is still very low but skills match is high, give partial credit
-  // (means: the tools are right even if the title is different)
-  if (roleScore <= 30 && requirementsCoverage >= 60) {
-    roleScore = 45; // "Different title, similar skillset"
+  // If role score is still low but skills match well, boost role score
+  // (means: the tools are right even if the title is different — common in tech)
+  if (roleScore <= 45 && requirementsCoverage >= 60) {
+    roleScore = Math.max(roleScore, 60); // "Different title, similar skillset"
+  }
+  if (roleScore <= 45 && requirementsCoverage >= 40) {
+    roleScore = Math.max(roleScore, 50); // Some overlap in tools
   }
 
   // ----------------------------------------------------------
@@ -776,11 +806,11 @@ export function scoreJobLocally(
   // STEP 9: CATEGORY & REASONING
   // ----------------------------------------------------------
   let category: SmartScore['category'];
-  if (overallScore >= 80) category = 'PERFECT';
+  if (overallScore >= 78) category = 'PERFECT';
   else if (overallScore >= 65) category = 'STRONG';
-  else if (overallScore >= 50) category = 'GOOD';
-  else if (overallScore >= 38) category = 'POSSIBLE';
-  else if (overallScore >= 25) category = 'STRETCH';
+  else if (overallScore >= 52) category = 'GOOD';
+  else if (overallScore >= 40) category = 'POSSIBLE';
+  else if (overallScore >= 28) category = 'STRETCH';
   else category = 'WEAK';
 
   // Build honest reasoning in Hebrew
