@@ -41,6 +41,10 @@ export class JobService {
         where.locationType = filters.locationType;
       }
 
+      if (filters.experienceLevel) {
+        where.experienceLevel = { equals: filters.experienceLevel, mode: 'insensitive' };
+      }
+
       if (filters.minScore !== undefined || filters.maxScore !== undefined) {
         where.scores = {
           some: {

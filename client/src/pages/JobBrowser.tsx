@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -48,17 +48,40 @@ const JobBrowser = () => {
     order: 'desc',
   })
 
+  // Debounced search — waits 400ms after user stops typing
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchInput)
+      setPage(1)
+    }, 400)
+    return () => clearTimeout(timer)
+  }, [searchInput])
+
+  // Debounced location — waits 400ms after user stops typing
+  const [debouncedLocation, setDebouncedLocation] = useState('')
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (locationInput !== (filters.location || '')) {
+        setDebouncedLocation(locationInput)
+        setFilters(prev => ({ ...prev, location: locationInput || undefined }))
+        setPage(1)
+      }
+    }, 400)
+    return () => clearTimeout(timer)
+  }, [locationInput])
+
   // Build query params
   const queryParams: JobFilters = {
     page,
     limit: 20,
     ...filters,
-    search: searchInput || undefined,
+    search: debouncedSearch || undefined,
   }
 
   // Fetch jobs from real API
   const { data: jobsResponse, isLoading, isError, refetch } = useQuery({
-    queryKey: ['jobs', page, filters, searchInput],
+    queryKey: ['jobs', page, filters, debouncedSearch],
     queryFn: async () => {
       const res = await jobsApi.list(queryParams)
       return res
@@ -235,12 +258,6 @@ const JobBrowser = () => {
                 placeholder="e.g., Tel Aviv, Israel"
                 value={locationInput}
                 onChange={(e) => setLocationInput(e.target.value)}
-                onBlur={() => {
-                  if (locationInput) {
-                    setFilters({ ...filters, location: locationInput })
-                    setPage(1)
-                  }
-                }}
                 className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 dark:text-white text-sm"
               />
             </div>

@@ -23,6 +23,9 @@ router.get(
     query('maxScore').optional().isFloat(),
     query('search').optional().isString(),
     query('locationType').optional().isString(),
+    query('experienceLevel').optional().isString(),
+    query('location').optional().isString(),
+    query('datePosted').optional().isString(),
     query('page').optional().isInt({ min: 1 }),
     query('limit').optional().isInt({ min: 1, max: 100 }),
     query('sort').optional().isString(),
@@ -42,14 +45,30 @@ router.get(
       return;
     }
 
+    // Convert datePosted shorthand ('24h', '7d', '30d') to dateFrom
+    let dateFrom = req.query.dateFrom ? new Date(req.query.dateFrom as string) : undefined;
+    const datePosted = req.query.datePosted as string | undefined;
+    if (datePosted && !dateFrom) {
+      const now = new Date();
+      if (datePosted === '24h') {
+        dateFrom = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      } else if (datePosted === '7d') {
+        dateFrom = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      } else if (datePosted === '30d') {
+        dateFrom = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      }
+    }
+
     const filters = {
       source: req.query.source as string | undefined,
-      dateFrom: req.query.dateFrom ? new Date(req.query.dateFrom as string) : undefined,
+      dateFrom,
       dateTo: req.query.dateTo ? new Date(req.query.dateTo as string) : undefined,
       minScore: req.query.minScore ? parseFloat(req.query.minScore as string) : undefined,
       maxScore: req.query.maxScore ? parseFloat(req.query.maxScore as string) : undefined,
       title: req.query.search as string | undefined,
       locationType: req.query.locationType as string | undefined,
+      experienceLevel: req.query.experienceLevel as string | undefined,
+      location: req.query.location as string | undefined,
     } as any;
 
     const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 20;
