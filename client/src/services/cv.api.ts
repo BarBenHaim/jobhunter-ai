@@ -62,4 +62,19 @@ export const cvApi = {
     const { data } = await apiClient.post('/cv/generate-for-job', { jobId })
     return data
   },
+
+  async downloadCV(filePath: string, fileName: string): Promise<void> {
+    const response = await apiClient.get('/cv/download', {
+      params: { path: filePath },
+      responseType: 'blob',
+    })
+    const url = window.URL.createObjectURL(new Blob([response.data]))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = fileName
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    window.URL.revokeObjectURL(url)
+  },
 }

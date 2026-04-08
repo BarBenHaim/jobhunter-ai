@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import {
   Search,
@@ -14,6 +14,11 @@ import {
   Clock,
   Building2,
   Target,
+  X,
+  Download,
+  Sparkles,
+  CheckCircle,
+  AlertCircle,
 } from 'lucide-react'
 import { Card } from '@/components/common/Card'
 import { Badge } from '@/components/common/Badge'
@@ -21,6 +26,7 @@ import { Pagination } from '@/components/common/Pagination'
 import { EmptyState } from '@/components/common/EmptyState'
 import { Job, JobFilters } from '@/types'
 import { jobsApi } from '@/services/jobs.api'
+import { cvApi } from '@/services/cv.api'
 
 const SOURCE_DISPLAY: Record<string, { label: string; color: 'primary' | 'success' | 'warning' | 'error' | 'gray' }> = {
   LINKEDIN: { label: 'LinkedIn', color: 'primary' },
@@ -111,6 +117,199 @@ const CATEGORY_LABELS: Record<string, { label: string; color: string }> = {
   UNKNOWN: { label: '', color: '' },
 }
 
+/** CV Tailoring Modal */
+const CVModal = ({ job, onClose }: { job: any; onClose: () => void }) => {
+  const [tailoredResult, setTailoredResult] = useState<any>(null)
+
+  const tailorMutation = useMutation({
+    mutationFn: async () => {
+      const res = await cvApi.generateForJob(job.id)
+      return res.data || res
+    },
+    onSuccess: (data) => {
+      setTailoredResult(data)
+    },
+  })
+
+  const handleDownload = async (filePath: string, format: string) => {
+    const cleanName = job.company.replace(/[^a-zA-Z0-9\u0590-\u05FF]/g, '_')
+    const fileName = `CV_${cleanName}_${format === 'docx' ? 'Word' : 'PDF'}.${format}`
+    try {
+      await cvApi.downloadCV(filePath, fileName)
+    } catch (err) {
+      console.error('Download failed:', err)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div
+        className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+        dir="rtl"
+      >
+        {/* Header */}
+        <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-5 py-4 flex items-center justify-between rounded-t-2xl z-10">
+          <div className="min-w-0">
+            <h2 className="text-lg font-bold text-gray-900 dark:text-white truncate">קורות חיים למשרה</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 truncate" dir="ltr">{job.title} — {job.company}</p>
+          </div>
+          <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0">
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          {/* Tailor CV Button */}
+          {!tailoredResult && !tailorMutation.isPending && (
+            <div className="text-center space-y-3">
+              <div className="w-16 h-16 mx-auto rounded-full bg-gradient-to-br from-primary-100 to-purple-100 dark:from-primary-900/30 dark:to-purple-900/30 flex items-center justify-center">
+                <Sparkles size={28} className="text-primary-600 dark:text-primary-400" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-gray-900 dark:text-white">התאמת קורות חיים חכמה</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                  AI ינתח את המשרה וישנה את קורות החיים שלך — כותרות תפקידים, ניסוח, דגשים וכישורים — כדי למקסם את הסיכויים שלך.
+                </p>
+              </div>
+              <button
+                onClick={() => tailorMutation.mutate()}
+                className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-primary-500 to-purple-500 text-white font-semibold hover:shadow-lg hover:shadow-primary-500/25 transition-all"
+              >
+                <Sparkles size={18} />
+                התאם קורות חיים למשרה זו
+              </button>
+            </div>
+          )}
+
+          {/* Loading State */}
+          {tailorMutation.isPending && (
+            <div className="text-center py-8 space-y-3">
+              <Loader2 size={36} className="animate-spin text-primary-500 mx-auto" />
+              <div>
+                <p className="font-semibold text-gray-900 dark:text-white">מתאים את קורות החיים...</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">AI מנתח את המשרה ומשנה כותרות, ניסוח ודגשים</p>
+              </div>
+            </div>
+          )}
+
+          {/* Error State */}
+          {tailorMutation.isError && (
+            <div className="text-center py-6 space-y-3">
+              <AlertCircle size={36} className="text-red-500 mx-auto" />
+              <p className="font-semibold text-red-600 dark:text-red-400">שגיאה ביצירת קורות החיים</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                {(tailorMutation.error as any)?.response?.data?.error?.message || 'נסה שוב מאוחר יותר'}
+              </p>
+              <button
+                onClick={() => tailorMutation.mutate()}
+                className="px-4 py-2 rounded-xl border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              >
+                נסה שוב
+              </button>
+            </div>
+          )}
+
+          {/* Success State - Show tailoring details + download */}
+          {tailoredResult && (
+            <div className="space-y-4">
+              {/* Success banner */}
+              <div className="flex items-center gap-2 p-3 rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
+                <CheckCircle size={20} className="text-green-600 dark:text-green-400 flex-shrink-0" />
+                <div>
+                  <p className="text-sm font-semibold text-green-800 dark:text-green-300">קורות החיים הותאמו בהצלחה!</p>
+                  {tailoredResult.tailoringDetails?.matchPercentage && (
+                    <p className="text-xs text-green-600 dark:text-green-400">אחוז התאמה ל-ATS: {tailoredResult.tailoringDetails.matchPercentage}%</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Tailoring details preview */}
+              {tailoredResult.tailoringDetails && (
+                <div className="space-y-3">
+                  {/* Summary */}
+                  {tailoredResult.tailoringDetails.summary && (
+                    <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-900/50">
+                      <h4 className="text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">תקציר מקצועי חדש</h4>
+                      <p className="text-sm text-gray-800 dark:text-gray-200" dir="ltr">{tailoredResult.tailoringDetails.summary}</p>
+                    </div>
+                  )}
+
+                  {/* Reshaped experiences */}
+                  {tailoredResult.tailoringDetails.experiences?.length > 0 && (
+                    <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-900/50">
+                      <h4 className="text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">תפקידים (ניסוח מותאם)</h4>
+                      <div className="space-y-2">
+                        {tailoredResult.tailoringDetails.experiences.map((exp: any, i: number) => (
+                          <div key={i} className="text-sm" dir="ltr">
+                            <span className="font-semibold text-gray-900 dark:text-white">{exp.title}</span>
+                            <span className="text-gray-500"> — {exp.company}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Skills */}
+                  {tailoredResult.tailoringDetails.skills?.length > 0 && (
+                    <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-900/50">
+                      <h4 className="text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">כישורים מודגשים</h4>
+                      <div className="flex flex-wrap gap-1.5 mt-1">
+                        {tailoredResult.tailoringDetails.skills.slice(0, 12).map((skill: string, i: number) => (
+                          <span key={i} className="px-2 py-0.5 rounded-full bg-primary-50 text-primary-700 text-xs dark:bg-primary-900/20 dark:text-primary-400">
+                            {skill}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Highlights */}
+                  {tailoredResult.tailoringDetails.tailoredHighlights?.length > 0 && (
+                    <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-900/50">
+                      <h4 className="text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">נקודות מפתח</h4>
+                      <ul className="space-y-1">
+                        {tailoredResult.tailoringDetails.tailoredHighlights.map((h: string, i: number) => (
+                          <li key={i} className="text-xs text-gray-700 dark:text-gray-300 flex items-start gap-1.5" dir="ltr">
+                            <span className="text-green-500 mt-0.5 flex-shrink-0">✓</span>
+                            {h}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Download buttons */}
+              <div className="flex gap-2">
+                {tailoredResult.docxPath && (
+                  <button
+                    onClick={() => handleDownload(tailoredResult.docxPath, 'docx')}
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-medium transition-colors"
+                  >
+                    <Download size={16} />
+                    הורד Word
+                  </button>
+                )}
+                {tailoredResult.pdfPath && (
+                  <button
+                    onClick={() => handleDownload(tailoredResult.pdfPath, 'pdf')}
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-red-600 hover:bg-red-700 text-white font-medium transition-colors"
+                  >
+                    <Download size={16} />
+                    הורד PDF
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 type TimeTab = 'new' | 'week' | 'all'
 
 const TIME_TABS: { key: TimeTab; label: string; datePosted?: string }[] = [
@@ -128,6 +327,7 @@ const JobBrowser = () => {
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [sortByMatch, setSortByMatch] = useState(false)
   const [activeTab, setActiveTab] = useState<TimeTab>('all')
+  const [cvModalJob, setCvModalJob] = useState<any>(null)
   const [filters, setFilters] = useState<JobFilters>({
     sort: 'createdAt',
     order: 'desc',
@@ -472,10 +672,10 @@ const JobBrowser = () => {
                         <button
                           onClick={(e) => {
                             e.stopPropagation()
-                            navigate(`/cv-generator?jobId=${job.id}`)
+                            setCvModalJob(job)
                           }}
                           className="p-2 rounded-lg hover:bg-primary-50 dark:hover:bg-primary-900/20 text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
-                          title="צור CV מותאם"
+                          title="התאם CV למשרה"
                         >
                           <FileText size={16} />
                         </button>
@@ -607,11 +807,11 @@ const JobBrowser = () => {
                       {/* Action buttons */}
                       <div className="flex gap-2 flex-wrap">
                         <button
-                          onClick={() => navigate(`/cv-generator?jobId=${job.id}`)}
+                          onClick={() => setCvModalJob(job)}
                           className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-primary-500 to-purple-500 text-white text-sm font-medium hover:shadow-md transition-all"
                         >
-                          <FileText size={14} />
-                          צור CV מותאם
+                          <Sparkles size={14} />
+                          התאם CV למשרה
                         </button>
                         {job.sourceUrl && (
                           <a
@@ -648,6 +848,11 @@ const JobBrowser = () => {
             ? "לא ניתן להתחבר לשרת. ודא שהשרת פועל."
             : "אין משרות במאגר עדיין. לך לדשבורד והפעל חיפוש כדי למצוא משרות!"}
         />
+      )}
+
+      {/* CV Tailoring Modal */}
+      {cvModalJob && (
+        <CVModal job={cvModalJob} onClose={() => setCvModalJob(null)} />
       )}
     </div>
   )

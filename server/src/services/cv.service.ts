@@ -429,6 +429,19 @@ export class CVService {
         throw new NotFoundError('Job not found');
       }
 
+      // Extract profile info for better persona data
+      const structuredProfile = (userProfile.structuredProfile || {}) as any;
+      const personalInfo = structuredProfile.personalInfo || {};
+      const profileTitle = personalInfo.title || structuredProfile.summary?.split('.')[0] || 'Professional';
+
+      // Extract skills as target keywords for better AI context
+      const allSkills: string[] = [];
+      if (structuredProfile.skills) {
+        for (const category of Object.values(structuredProfile.skills)) {
+          if (Array.isArray(category)) allSkills.push(...category);
+        }
+      }
+
       // Call AI to generate CV content tailored to THIS specific job
       const cvContent = await aiClient.generateCVContent(
         {
@@ -439,9 +452,9 @@ export class CVService {
           requirements: job.requirements,
         } as any,
         {
-          name: userProfile.fullName || 'Professional',
-          title: userProfile.fullName || 'Professional',
-          targetKeywords: [],
+          name: userProfile.fullName || personalInfo.fullName || 'Professional',
+          title: profileTitle,
+          targetKeywords: allSkills.slice(0, 20),
         },
         userProfile.structuredProfile as any
       );
@@ -482,7 +495,8 @@ export class CVService {
         tailoringDetails: {
           summary: cvContent.summary || '',
           skills: cvContent.skills || [],
-          matchPercentage: atsValidation.score,
+          experiences: cvContent.experiences || cvContent.selectedExperiences || [],
+          matchPercentage: cvContent.matchPercentage || atsValidation.score,
           tailoredHighlights: cvContent.tailoredHighlights || [],
           keywordInjections: cvContent.keywordInjections || [],
         },
@@ -724,14 +738,26 @@ export class CVService {
     const fileName = `cv-${userProfile.id}-${Date.now()}.docx`;
     const filePath = path.join(this.cvOutputDir, fileName);
 
+    // Pull contact info from structured profile or fallback to top-level fields
+    const sp = (userProfile.structuredProfile || {}) as any;
+    const pi = sp.personalInfo || {};
+    const name = pi.fullName || userProfile.fullName || 'Professional';
+    const email = pi.email || userProfile.email || '';
+    const phone = pi.phone || userProfile.phone || '';
+    const location = pi.location || userProfile.location || '';
+    const linkedin = pi.linkedin || '';
+    const github = pi.github || '';
+
+    const contactParts = [email, phone, location, linkedin, github].filter(Boolean);
+
     const sections = [
       new Paragraph({
-        text: userProfile.fullName,
+        text: name,
         heading: HeadingLevel.HEADING_1,
         spacing: { after: 100 },
       }),
       new Paragraph({
-        text: `${userProfile.email}${userProfile.phone ? ` | ${userProfile.phone}` : ''}${userProfile.location ? ` | ${userProfile.location}` : ''}`,
+        text: contactParts.join(' | '),
         spacing: { after: 200 },
       }),
     ];
@@ -766,8 +792,9 @@ export class CVService {
       );
     }
 
-    // Add experience
-    if (cvContent.experiences && Array.isArray(cvContent.experiences)) {
+    // Add experience (handle both "experiences" and "selectedExperiences" field names)
+    const experiences = cvContent.experiences || cvContent.selectedExperiences || [];
+    if (Array.isArray(experiences) && experiences.length > 0) {
       sections.push(
         new Paragraph({
           text: 'Experience',
@@ -776,16 +803,87 @@ export class CVService {
         })
       );
 
-      for (const exp of cvContent.experiences) {
+      for (const exp of experiences) {
         sections.push(
           new Paragraph({
-            text: `${exp.title} at ${exp.company}`,
-            spacing: { before: 50, after: 25 },
-            bold: true,
+            children: [
+              new TextRun({ text: `${exp.title} | ${exp.company}`, bold: true }),
+              ...(exp.duration ? [new TextRun({ text: `  (${exp.duration})`, italics: true })] : []),
+            ],
+            spacing: { before: 80, after: 25 },
           }),
           new Paragraph({
             text: exp.description,
             spacing: { after: 50 },
+          })
+        );
+      }
+    }
+
+    // Add education (handle both "education" and "selectedEducation" field names)
+    const education = cvContent.education || cvContent.selectedEducation || [];
+    if (Array.isArray(education) && education.length > 0) {
+      sections.push(
+        new Paragraph({
+          text: 'Education',
+          heading: HeadingLevel.HEADING_2,
+          spacing: { before: 100, after: 50 },
+        })
+      );
+
+      for (const edu of education) {
+        sections.push(
+          new Paragraph({
+            children: [
+              new TextRun({ text: `${edu.degree}${edu.field ? `, ${edu.field}` : ''}`, bold: true }),
+              new TextRun({ text: ` — ${edu.school}` }),
+            ],
+            spacing: { before: 30, after: 30 },
+          })
+        );
+      }
+    }
+
+    // Add projects (handle both "projects" and "selectedProjects" field names)
+    const projects = cvContent.projects || cvContent.selectedProjects || [];
+    if (Array.isArray(projects) && projects.length > 0) {
+      sections.push(
+        new Paragraph({
+          text: 'Projects',
+          heading: HeadingLevel.HEADING_2,
+          spacing: { before: 100, after: 50 },
+        })
+      );
+
+      for (const proj of projects) {
+        sections.push(
+          new Paragraph({
+            children: [new TextRun({ text: proj.name, bold: true })],
+            spacing: { before: 30, after: 15 },
+          }),
+          new Paragraph({
+            text: proj.description,
+            spacing: { after: 30 },
+          })
+        );
+      }
+    }
+
+    // Add tailored highlights if present
+    if (cvContent.tailoredHighlights && Array.isArray(cvContent.tailoredHighlights) && cvContent.tailoredHighlights.length > 0) {
+      sections.push(
+        new Paragraph({
+          text: 'Key Highlights',
+          heading: HeadingLevel.HEADING_2,
+          spacing: { before: 100, after: 50 },
+        })
+      );
+
+      for (const highlight of cvContent.tailoredHighlights) {
+        sections.push(
+          new Paragraph({
+            text: `• ${highlight}`,
+            spacing: { after: 20 },
           })
         );
       }
@@ -810,16 +908,25 @@ export class CVService {
     const fileName = `cv-${userProfile.id}-${Date.now()}.pdf`;
     const filePath = path.join(this.cvOutputDir, fileName);
 
+    // Pull contact info from structured profile
+    const sp = (userProfile.structuredProfile || {}) as any;
+    const pi = sp.personalInfo || {};
+    const name = pi.fullName || userProfile.fullName || 'Professional';
+    const email = pi.email || userProfile.email || '';
+    const phone = pi.phone || userProfile.phone || '';
+    const location = pi.location || userProfile.location || '';
+    const linkedin = pi.linkedin || '';
+    const github = pi.github || '';
+    const contactParts = [email, phone, location, linkedin, github].filter(Boolean);
+
     const doc = new PDFDocument();
     const stream = require('fs').createWriteStream(filePath);
 
     doc.pipe(stream);
 
     // Add title
-    doc.fontSize(20).font('Helvetica-Bold').text(userProfile.fullName);
-    doc.fontSize(10).font('Helvetica').text(
-      `${userProfile.email}${userProfile.phone ? ` | ${userProfile.phone}` : ''}${userProfile.location ? ` | ${userProfile.location}` : ''}`
-    );
+    doc.fontSize(20).font('Helvetica-Bold').text(name);
+    doc.fontSize(10).font('Helvetica').text(contactParts.join(' | '));
     doc.moveDown();
 
     // Add summary
@@ -836,13 +943,51 @@ export class CVService {
       doc.moveDown();
     }
 
-    // Add experience
-    if (cvContent.experiences && Array.isArray(cvContent.experiences)) {
+    // Add experience (handle both field names)
+    const pdfExperiences = cvContent.experiences || cvContent.selectedExperiences || [];
+    if (Array.isArray(pdfExperiences) && pdfExperiences.length > 0) {
       doc.fontSize(12).font('Helvetica-Bold').text('Experience');
-      for (const exp of cvContent.experiences) {
-        doc.fontSize(11).font('Helvetica-Bold').text(`${exp.title} at ${exp.company}`);
+      doc.moveDown(0.3);
+      for (const exp of pdfExperiences) {
+        doc.fontSize(11).font('Helvetica-Bold').text(`${exp.title} | ${exp.company}${exp.duration ? `  (${exp.duration})` : ''}`);
         doc.fontSize(10).font('Helvetica').text(exp.description);
-        doc.moveDown();
+        doc.moveDown(0.5);
+      }
+    }
+
+    // Add education
+    const pdfEducation = cvContent.education || cvContent.selectedEducation || [];
+    if (Array.isArray(pdfEducation) && pdfEducation.length > 0) {
+      doc.moveDown(0.3);
+      doc.fontSize(12).font('Helvetica-Bold').text('Education');
+      doc.moveDown(0.3);
+      for (const edu of pdfEducation) {
+        doc.fontSize(10).font('Helvetica-Bold').text(`${edu.degree}${edu.field ? `, ${edu.field}` : ''}`);
+        doc.fontSize(10).font('Helvetica').text(edu.school);
+        doc.moveDown(0.3);
+      }
+    }
+
+    // Add projects
+    const pdfProjects = cvContent.projects || cvContent.selectedProjects || [];
+    if (Array.isArray(pdfProjects) && pdfProjects.length > 0) {
+      doc.moveDown(0.3);
+      doc.fontSize(12).font('Helvetica-Bold').text('Projects');
+      doc.moveDown(0.3);
+      for (const proj of pdfProjects) {
+        doc.fontSize(10).font('Helvetica-Bold').text(proj.name);
+        doc.fontSize(10).font('Helvetica').text(proj.description);
+        doc.moveDown(0.3);
+      }
+    }
+
+    // Add tailored highlights
+    if (cvContent.tailoredHighlights && Array.isArray(cvContent.tailoredHighlights) && cvContent.tailoredHighlights.length > 0) {
+      doc.moveDown(0.3);
+      doc.fontSize(12).font('Helvetica-Bold').text('Key Highlights');
+      doc.moveDown(0.3);
+      for (const highlight of cvContent.tailoredHighlights) {
+        doc.fontSize(10).font('Helvetica').text(`• ${highlight}`);
       }
     }
 
