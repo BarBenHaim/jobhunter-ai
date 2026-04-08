@@ -106,20 +106,35 @@ router.post('/smart-trigger', authMiddleware, async (req: AuthRequest, res: Resp
       ? smartKeywords.combined
       : DEFAULT_KEYWORDS
 
-    // Limit to top 12 keywords to avoid excessive scraping
-    const topKeywords = keywordsToUse.slice(0, 12)
-
+    // IMPORTANT: Each scrapeAll call costs 2 SerpAPI credits (Indeed + Google Jobs).
+    // To avoid burning through credits, we batch keywords into a few combined queries
+    // instead of running 12 separate scrapeAll calls (which would cost 24 credits!).
+    const allKeywords = keywordsToUse.slice(0, 15)
     const location = preferences?.preferredLocations?.[0] || req.body.location || 'Israel'
 
-    logger.info('Smart scraping with keywords', { keywords: topKeywords, location })
+    // Group keywords into max 3 batches (= max 6 SerpAPI calls instead of 24+)
+    const BATCH_SIZE = 3
+    const keywordBatches: string[][] = []
+    for (let i = 0; i < allKeywords.length; i += Math.ceil(allKeywords.length / BATCH_SIZE)) {
+      const batch = allKeywords.slice(i, i + Math.ceil(allKeywords.length / BATCH_SIZE))
+      keywordBatches.push(batch)
+    }
 
-    // Step 4: Scrape with smart keywords
+    logger.info('Smart scraping with batched keywords', {
+      totalKeywords: allKeywords.length,
+      batches: keywordBatches.length,
+      estimatedSerpApiCalls: keywordBatches.length * 2,
+      location,
+    })
+
+    // Step 4: Scrape with batched keywords (each batch is ONE scrapeAll call)
     const allJobs: any[] = []
     const sourceBreakdown: Record<string, number> = {}
 
-    for (const keyword of topKeywords) {
+    for (const batch of keywordBatches) {
       try {
-        const results = await lightweightScraperService.scrapeAll([keyword], location)
+        // scrapeAll joins the keywords array into a single search query
+        const results = await lightweightScraperService.scrapeAll(batch, location)
         for (const result of results) {
           if (result.jobs?.length > 0) {
             allJobs.push(...result.jobs)
@@ -127,7 +142,7 @@ router.post('/smart-trigger', authMiddleware, async (req: AuthRequest, res: Resp
           }
         }
       } catch (err) {
-        logger.error(`Error scraping keyword "${keyword}":`, err)
+        logger.error(`Error scraping batch [${batch.join(', ')}]:`, err)
       }
     }
 
@@ -234,7 +249,7 @@ router.post('/smart-trigger', authMiddleware, async (req: AuthRequest, res: Resp
           scrapedCount: count,
           timestamp: new Date(),
         })),
-        keywords: topKeywords,
+        keywords: allKeywords,
         smartKeywords: {
           primary: smartKeywords.primary?.slice(0, 5),
           adjacent: smartKeywords.adjacent?.slice(0, 5),
@@ -264,13 +279,19 @@ router.post('/trigger', async (req: Request, res: Response) => {
 
     logger.info('Scrape triggered', { keywords: keywordList, location })
 
-    // Scrape each keyword separately across all sources (each scraper joins keywords)
+    // Batch keywords into max 3 scrapeAll calls to save SerpAPI credits
+    // Each scrapeAll costs 2 SerpAPI calls (Indeed + Google Jobs)
     const allJobs: any[] = []
     const sourceBreakdown: Record<string, number> = {}
+    const BATCH_SIZE = 3
+    const batches: string[][] = []
+    for (let i = 0; i < keywordList.length; i += Math.ceil(keywordList.length / BATCH_SIZE)) {
+      batches.push(keywordList.slice(i, i + Math.ceil(keywordList.length / BATCH_SIZE)))
+    }
 
-    for (const keyword of keywordList) {
+    for (const batch of batches) {
       try {
-        const results = await lightweightScraperService.scrapeAll([keyword], location)
+        const results = await lightweightScraperService.scrapeAll(batch, location)
         for (const result of results) {
           if (result.jobs && result.jobs.length > 0) {
             allJobs.push(...result.jobs)
@@ -278,7 +299,7 @@ router.post('/trigger', async (req: Request, res: Response) => {
           }
         }
       } catch (err) {
-        logger.error(`Error scraping keyword "${keyword}":`, err)
+        logger.error(`Error scraping batch [${batch.join(', ')}]:`, err)
       }
     }
 
