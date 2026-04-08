@@ -47,7 +47,7 @@ const Profile = () => {
     setIsProcessing(true)
     setError(null)
     try {
-      await profileApi.submitKnowledge({ rawText: rawInput })
+      await profileApi.submitKnowledge({ text: rawInput })
       queryClient.invalidateQueries({ queryKey: ['profile'] })
       setSuccessMsg('הפרופיל עודכן בהצלחה!')
       setRawInput('')
