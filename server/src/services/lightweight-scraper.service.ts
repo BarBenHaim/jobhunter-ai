@@ -44,62 +44,20 @@ class LightweightScraperService {
       },
       timeout: 30000,
     });
+
+    // Startup validation
+    if (!process.env.SERPAPI_KEY) {
+      logger.warn('⚠️  SERPAPI_KEY not configured — Indeed and Google Jobs scraping will be limited to RSS fallback only');
+    }
   }
 
   /**
-   * Scrape Indeed Israel — tries SerpAPI first (reliable), falls back to RSS
+   * Scrape Indeed Israel via RSS feed.
+   * SerpAPI Google Jobs is handled by scrapeGoogleJobs() to avoid duplicate credits.
+   * This method focuses on Indeed's own RSS feed which is free.
    */
   private async scrapeIndeedIsrael(keywords: string[], location: string): Promise<ScrapedJob[]> {
-    // Strategy 1: SerpAPI (most reliable)
-    const serpApiKey = process.env.SERPAPI_KEY;
-    if (serpApiKey) {
-      try {
-        logger.info('Scraping Indeed Israel via SerpAPI', { keywords, location });
-        const jobs: ScrapedJob[] = [];
-        const searchTerm = keywords.join(' ');
-
-        const response = await this.axiosInstance.get('https://serpapi.com/search', {
-          params: {
-            engine: 'google_jobs',
-            q: `${searchTerm} site:indeed.com`,
-            location: location || 'Israel',
-            api_key: serpApiKey,
-          },
-        });
-
-        // Record SerpAPI cost
-        costTracker.recordSerpApiCall();
-
-        const jobResults = response.data.jobs_results || [];
-        for (const job of jobResults) {
-          if (job.title && job.company_name) {
-            jobs.push({
-              title: job.title,
-              company: job.company_name,
-              location: job.location || location || 'Israel',
-              locationType: 'hybrid',
-              description: (job.description || '').substring(0, 500),
-              sourceUrl: job.related_links?.[0]?.link || job.link || `https://il.indeed.com/viewjob?jk=${job.job_id || ''}`,
-              source: 'INDEED',
-              postedAt: job.detected_extensions?.posted_at
-                ? this.parseRelativeDate(job.detected_extensions.posted_at)
-                : new Date(),
-              externalId: job.job_id,
-            });
-          }
-        }
-
-        if (jobs.length > 0) {
-          logger.info(`Found ${jobs.length} Indeed jobs via SerpAPI`);
-          return jobs;
-        }
-        logger.info('SerpAPI returned 0 Indeed jobs, trying RSS fallback');
-      } catch (err) {
-        logger.warn('SerpAPI Indeed search failed, trying RSS fallback', { error: err });
-      }
-    }
-
-    // Strategy 2: RSS feed fallback
+    // RSS feed (free, no API key needed)
     try {
       logger.info('Scraping Indeed Israel via RSS feed', { keywords, location });
       const jobs: ScrapedJob[] = [];
@@ -109,11 +67,15 @@ class LightweightScraperService {
 
       const response = await this.axiosInstance.get(url, {
         headers: {
-          'User-Agent': this.USER_AGENT,
-          'Accept': 'application/rss+xml, application/xml, text/xml',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'application/rss+xml, application/xml, text/xml, */*',
+          'Accept-Language': 'en-US,en;q=0.9,he;q=0.8',
+          'Referer': 'https://il.indeed.com/',
         },
         timeout: 15000,
       });
+
+      logger.info(`Indeed RSS response status: ${response.status}, data length: ${(response.data || '').length}`);
 
       const $ = cheerio.load(response.data, { xmlMode: true });
       const items = $('item');
