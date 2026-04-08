@@ -501,11 +501,14 @@ Provide a detailed fit analysis with career growth potential.`;
 3. THE SUMMARY IS YOUR ELEVATOR PITCH
    Write it as if the candidate has 10 seconds to convince a hiring manager. It must:
    - Open with years of experience + primary domain
-   - Connect their strongest qualification directly to what THIS job needs
+   - Connect their strongest qualification directly to the TYPE of role (not the specific company)
    - End with a unique differentiator — what makes this candidate different from 100 others
    - Be 2-3 sentences MAX. No fluff words like "passionate" or "motivated".
+   - NEVER mention the target company name in the summary — it looks desperate and auto-generated. A good CV summary works for any similar role, not just one company.
+   - NEVER end with "perfectly positioned for X" or "ideal fit for Y" — let the reader draw that conclusion.
 
-   BAD: "Passionate full-stack developer with experience in various technologies seeking new opportunities."
+   BAD: "Passionate full-stack developer seeking new opportunities at ACME Corp."
+   BAD: "...perfectly positioned for Google's engineering needs."
    GOOD: "Full-stack developer with 3+ years building production React/Node.js applications. Led the architecture of a B2B SaaS platform handling 10K daily active users, with hands-on experience across the entire product lifecycle from database design to deployment."
 
 4. KEYWORD STRATEGY
@@ -552,7 +555,8 @@ IMPORTANT FIELD NAMES: Use "experiences" (not "selectedExperiences"), "education
 ═══ QUALITY CHECKLIST (verify before returning) ═══
 □ Every job title is EXACTLY as it appears in the candidate's profile — zero modifications
 □ Every bullet point has at least one concrete detail (number, tech, deliverable)
-□ Summary is specific to THIS job and mentions the company or role type
+□ Summary does NOT mention the target company name — it should read like a natural professional summary, not a love letter to one company
+□ Summary does NOT end with "positioned for", "ideal for", or "perfect fit" phrasing
 □ No buzzwords without substance ("leveraged", "spearheaded", "synergized")
 □ Number of experiences matches the profile exactly
 □ Skills list contains only technologies the candidate actually knows
@@ -577,7 +581,7 @@ Requirements: ${job.requirements || 'Not specified'}
 CRITICAL — READ BEFORE GENERATING:
 1. Job titles must be EXACTLY as they appear in the profile — no parenthetical additions, no modifications whatsoever
 2. Every single bullet point needs a concrete detail: a number, a technology, a specific deliverable, or a measurable outcome. "Led cross-functional teams" is NOT acceptable. "Led a 5-person team to ship a React dashboard in 3 months" IS.
-3. The summary must mention ${job.company || 'the target company'} or the specific role type and connect the candidate's strongest real qualification to what this job needs
+3. The summary must NOT mention "${job.company}" or any company name — write it as a strong standalone professional summary that emphasizes the skills relevant to this TYPE of role. No "perfectly positioned for X" endings.
 4. Count the experiences in the profile and output EXACTLY that many — no more, no less
 5. Order experiences by relevance to this ${job.title} role, not by date`;
 

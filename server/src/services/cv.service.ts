@@ -489,6 +489,7 @@ export class CVService {
       return {
         userId,
         jobId,
+        candidateName: userProfile.fullName || personalInfo.fullName || '',
         pdfPath,
         docxPath,
         atsScore: atsValidation.score,

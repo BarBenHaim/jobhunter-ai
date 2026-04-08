@@ -136,8 +136,10 @@ const CVModal = ({ job, onClose }: { job: any; onClose: () => void }) => {
   })
 
   const handleDownload = async (filePath: string, format: string) => {
-    const cleanName = job.company.replace(/[^a-zA-Z0-9\u0590-\u05FF]/g, '_')
-    const fileName = `CV_${cleanName}_${format === 'docx' ? 'Word' : 'PDF'}.${format}`
+    // Standard CV filename: Name_Title_CV.format — no company name
+    const candidateName = (tailoredResult?.candidateName || 'CV').replace(/[^a-zA-Z0-9\u0590-\u05FF ]/g, '').replace(/\s+/g, '_')
+    const roleTitle = job.title.replace(/[^a-zA-Z0-9\u0590-\u05FF ]/g, '').replace(/\s+/g, '_').substring(0, 30)
+    const fileName = `${candidateName}_${roleTitle}_CV.${format}`
     try {
       await cvApi.downloadCV(filePath, fileName)
     } catch (err) {
