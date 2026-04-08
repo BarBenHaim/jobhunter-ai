@@ -16,13 +16,37 @@ const DEFAULT_KEYWORDS = [
   'Backend',
   'Software Engineer',
   'Developer',
-  'AI',
-  'Machine Learning',
-  'Data Engineer',
-  'DevOps',
   'מפתח תוכנה',
   'פיתוח',
 ]
+
+// Words that indicate a job is NOT tech-related — used to filter out irrelevant results
+const IRRELEVANT_TITLE_KEYWORDS = [
+  'מכירות', 'sales', 'נציג שירות', 'customer service', 'call center', 'מוקד',
+  'שיווק', 'marketing', 'סושיאל', 'social media', 'תוכן', 'content writer',
+  'מנהל חשבונות', 'accounting', 'הנהלת חשבונות', 'bookkeep',
+  'מזכיר', 'secretary', 'אדמיניסטרציה', 'admin assistant',
+  'נהג', 'driver', 'שליח', 'courier', 'משלוח',
+  'טכנאי מזגנים', 'אינסטלטור', 'plumber', 'חשמלאי', 'electrician',
+  'עוזר בית', 'מטפל', 'caregiver', 'סיעוד',
+  'קופאי', 'cashier', 'מלצר', 'waiter', 'ברמן', 'bartender',
+  'אבטחה', 'security guard', 'שומר', 'guard',
+  'עורך דין', 'lawyer', 'attorney',
+  'מנקה', 'cleaning', 'ניקיון',
+  'פיננסי', 'financial advisor',
+  'ביטוח', 'insurance agent',
+]
+
+/** Check if a job title looks tech-relevant. Returns false for obvious non-tech jobs. */
+function isTechRelevant(title: string): boolean {
+  if (!title) return false
+  const lower = title.toLowerCase()
+  // If title contains any irrelevant keyword, reject it
+  for (const kw of IRRELEVANT_TITLE_KEYWORDS) {
+    if (lower.includes(kw.toLowerCase())) return false
+  }
+  return true
+}
 
 // POST /api/scrape/trigger - Trigger a full scrape across all sources
 router.post('/trigger', async (req: Request, res: Response) => {
@@ -51,12 +75,19 @@ router.post('/trigger', async (req: Request, res: Response) => {
       }
     }
 
+    // Filter out obviously irrelevant jobs (sales, marketing, etc.)
+    const relevantJobs = allJobs.filter(job => isTechRelevant(job.title))
+    const filtered = allJobs.length - relevantJobs.length
+    if (filtered > 0) {
+      logger.info(`Filtered out ${filtered} irrelevant jobs (non-tech titles)`)
+    }
+
     // Save jobs to database
     let saved = 0
     let duplicates = 0
     const jobsCreated: any[] = []
 
-    for (const job of allJobs) {
+    for (const job of relevantJobs) {
       try {
         const created = await jobService.createJob(job)
         if (created) {

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -24,6 +24,7 @@ import { Card } from '@/components/common/Card'
 import { EmptyState } from '@/components/common/EmptyState'
 import { scrapeApi } from '@/services/scrape.api'
 import { jobsApi } from '@/services/jobs.api'
+import { profileApi } from '@/services/profile.api'
 
 const SOURCE_DISPLAY_NAMES: Record<string, string> = {
   INDEED: 'Indeed Israel',
@@ -67,13 +68,41 @@ const Dashboard = () => {
     },
   })
 
+  // Fetch user profile for preferences (shared cache with other pages)
+  const { data: profile } = useQuery({
+    queryKey: ['profile'],
+    queryFn: () => profileApi.getProfile(),
+    staleTime: 5 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  })
+
+  // Build scraping keywords from user preferences
+  const scrapeKeywords = useMemo(() => {
+    const defaults = ['React', 'Full Stack', 'Node.js', 'TypeScript', 'Frontend', 'Backend', 'מפתח תוכנה', 'פיתוח']
+    const prefs = (profile as any)?.preferences
+    if (prefs?.targetRoles && Array.isArray(prefs.targetRoles) && prefs.targetRoles.length > 0) {
+      // Use user's target roles + a few essential tech defaults
+      const userRoles: string[] = prefs.targetRoles
+      const essentialDefaults = ['מפתח תוכנה', 'פיתוח']
+      const combined = [...new Set([...userRoles, ...essentialDefaults])]
+      return combined
+    }
+    return defaults
+  }, [profile])
+
+  const scrapeLocation = useMemo(() => {
+    const prefs = (profile as any)?.preferences
+    if (prefs?.preferredLocations && Array.isArray(prefs.preferredLocations) && prefs.preferredLocations.length > 0) {
+      return prefs.preferredLocations[0]
+    }
+    return 'Israel'
+  }, [profile])
+
   // Trigger scrape mutation
   const scrapeMutation = useMutation({
     mutationFn: () =>
-      scrapeApi.triggerScrape(
-        ['React', 'Full Stack', 'Node.js', 'TypeScript', 'Frontend', 'Backend', 'מפתח תוכנה', 'פיתוח'],
-        'Israel'
-      ),
+      scrapeApi.triggerScrape(scrapeKeywords, scrapeLocation),
     onSuccess: (res) => {
       setScrapeMessage(`${res.data.totalJobsCreated} new jobs found!`)
       queryClient.invalidateQueries({ queryKey: ['scrape-status'] })
