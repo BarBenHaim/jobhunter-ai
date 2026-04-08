@@ -6,7 +6,8 @@ import { cvGenerationQueue } from '../queue';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { Document, Packer, Paragraph, TextRun, HeadingLevel } from 'docx';
-import * as PDFDocument from 'pdfkit';
+// @ts-ignore — pdfkit uses default export, TypeScript namespace import breaks constructor
+const PDFDocument = require('pdfkit');
 
 export class CVService {
   private cvOutputDir = path.join(process.cwd(), 'storage', 'cvs');

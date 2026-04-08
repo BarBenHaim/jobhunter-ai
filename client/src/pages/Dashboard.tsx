@@ -353,6 +353,76 @@ const Dashboard = () => {
         </button>
       </div>
 
+      {/* Salary Estimates & Career Direction */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 animate-slide-up">
+        {/* Salary Estimates by Role */}
+        <Card>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4" dir="rtl">💰 הערכות שכר לפי תחום</h2>
+          <div className="space-y-3" dir="rtl">
+            {[
+              { role: 'Full Stack Developer', range: '18,000-28,000', avg: '22,000', color: 'bg-blue-500', width: '75%' },
+              { role: 'Frontend Developer', range: '16,000-26,000', avg: '20,000', color: 'bg-cyan-500', width: '68%' },
+              { role: 'Backend Developer', range: '18,000-30,000', avg: '23,000', color: 'bg-indigo-500', width: '78%' },
+              { role: 'DevOps Engineer', range: '22,000-35,000', avg: '28,000', color: 'bg-purple-500', width: '90%' },
+              { role: 'Team Lead', range: '28,000-42,000', avg: '34,000', color: 'bg-emerald-500', width: '95%' },
+              { role: 'AI/ML Engineer', range: '25,000-40,000', avg: '32,000', color: 'bg-pink-500', width: '92%' },
+            ].map((item) => (
+              <div key={item.role}>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{item.role}</span>
+                  <span className="text-xs text-gray-500 dark:text-gray-400">₪{item.range}</span>
+                </div>
+                <div className="h-2 rounded-full bg-gray-100 dark:bg-gray-700 overflow-hidden">
+                  <div className={`h-full rounded-full ${item.color} transition-all duration-500`} style={{ width: item.width }} />
+                </div>
+              </div>
+            ))}
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">* הערכה לשוק ההייטק בישראל, שכר ברוטו חודשי</p>
+          </div>
+        </Card>
+
+        {/* Career Direction */}
+        <Card>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4" dir="rtl">🧭 המלצת כיוון קריירה</h2>
+          <div className="space-y-4" dir="rtl">
+            <div className="p-4 rounded-xl bg-gradient-to-l from-primary-50 to-purple-50 dark:from-primary-900/20 dark:to-purple-900/20 border border-primary-200/50 dark:border-primary-700/30">
+              <h3 className="font-bold text-gray-900 dark:text-white mb-1">Full Stack Developer</h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                הכיוון הכי מבוקש בשוק. שילוב של React + Node.js פותח את הדלתות לרוב המשרות בהייטק הישראלי.
+              </p>
+              <div className="mt-2 flex items-center gap-2">
+                <span className="px-2 py-0.5 rounded-full bg-green-100 text-green-700 text-xs font-medium dark:bg-green-900/30 dark:text-green-400">ביקוש גבוה</span>
+                <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs font-medium dark:bg-blue-900/30 dark:text-blue-400">צמיחה 15%</span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300">כיוונים נוספים מומלצים:</h4>
+              {[
+                { dir: 'DevOps / Cloud Engineer', reason: 'שכר גבוה, ביקוש קבוע, מעבר קל מפיתוח', trend: '↑' },
+                { dir: 'Tech Lead', reason: 'צמיחה טבעית לאחר 4-5 שנות ניסיון', trend: '↑' },
+                { dir: 'AI/ML Engineer', reason: 'תחום צומח עם שכר פרימיום', trend: '🚀' },
+              ].map((item) => (
+                <div key={item.dir} className="flex items-start gap-3 p-3 rounded-lg bg-gray-50 dark:bg-gray-800/50">
+                  <span className="text-lg">{item.trend}</span>
+                  <div>
+                    <p className="text-sm font-medium text-gray-900 dark:text-white">{item.dir}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">{item.reason}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <button
+              onClick={() => navigate('/profile')}
+              className="w-full text-sm text-primary-600 dark:text-primary-400 font-medium hover:text-primary-700 dark:hover:text-primary-300 transition-colors py-2"
+            >
+              עדכן את הפרופיל לקבלת המלצות מותאמות אישית →
+            </button>
+          </div>
+        </Card>
+      </div>
+
       {/* Section 3: Stats Summary (compact row) */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {statCards.map((card, index) => {
