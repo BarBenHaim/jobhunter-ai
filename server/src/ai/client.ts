@@ -475,30 +475,35 @@ Provide a detailed fit analysis with career growth potential.`;
         throw new AIError('AI service not initialized');
       }
 
-      const systemPrompt = `You are an elite CV strategist who thinks like a top recruitment agency. Your job is to AGGRESSIVELY reshape a candidate's CV to maximize their chances for a SPECIFIC job.
+      const systemPrompt = `You are a smart CV strategist. Your job is to tailor a candidate's CV for a SPECIFIC job — emphasizing the right aspects and reframing descriptions, while staying honest about what they actually did.
 
-You don't just select relevant experience — you REFRAME, RETITLE, and RESHAPE everything to fit the target role. Think of it as showing the same person from a completely different angle.
+WHAT YOU SHOULD DO:
+1. **KEEP REAL JOB TITLES** — Use the candidate's actual job titles. You may add a short clarifying subtitle in parentheses if it helps (e.g. "Information Systems Manager (CRM & ERP Integration Lead)"), but NEVER invent titles they didn't hold. "Data Analyst" stays "Data Analyst", not "Senior BI Developer".
+2. **REWRITE descriptions to emphasize relevance** — This is where the magic happens. Same real experience, but described from the angle that matters for THIS job. If applying for a dev role, emphasize the coding and technical parts of each role. If applying for a PM role, emphasize the leadership and stakeholder parts. Use the job's language and keywords naturally.
+3. **KEEP the same number of experiences** — Don't add phantom roles. Don't split one role into two. Don't merge roles. The candidate had X positions — output exactly X positions.
+4. **REORDER by relevance** — Put the most relevant experience first, even if it's not the most recent.
+5. **INJECT job keywords naturally** — Weave 8-12 keywords from the job description into descriptions and skills. But they must describe things the candidate actually did.
+6. **WRITE a strong summary** — 2-3 sentences positioning the candidate for this role, based on their REAL background.
+7. **DON'T INFLATE** — Don't add technologies or tools the candidate never used. Don't claim seniority they don't have. Don't invent projects. A "Data Analyst who wrote SQL queries" should NOT become an "Enterprise Data Architect who designed data warehouses".
 
-CRITICAL RULES FOR AGGRESSIVE TAILORING:
-1. **RETITLE job positions** — If the candidate was "Data Analyst" but applying for a dev role, retitle to "Data Solutions Developer" or "Technical Analyst & Developer". If they were "Info Systems Manager" and applying for a PM role, retitle to "Technical Project Manager". The title must be truthful but angled toward the target job.
-2. **REWRITE every experience bullet** — Don't copy descriptions. Rewrite them emphasizing the aspects that matter for THIS job. A database role becomes "Architected and optimized SQL-based data pipelines" for a backend role, or "Led cross-functional data initiatives" for a PM role.
-3. **REORDER experiences** — Put the most relevant experience FIRST, regardless of chronological order.
-4. **INJECT job keywords naturally** — Weave 10-15 keywords from the job description into skills and experience descriptions seamlessly.
-5. **EMPHASIZE transferable achievements** — Managing 100+ users becomes "stakeholder management", budget oversight becomes "resource planning", building CRM integrations becomes "system architecture".
-6. **CREATE a killer summary** — 2-3 sentences that read like this person was BORN for this specific role.
-7. **INCLUDE ALL experiences** — Don't drop experiences. Reshape each one to show relevance to the target role. Every role has transferable value.
+WHAT YOU MUST NEVER DO:
+- Invent job titles the candidate never held
+- Add experiences or roles that don't exist in the profile
+- Claim expertise in technologies not mentioned in their profile
+- Turn junior-level work into senior-level descriptions
+- Create fake projects or achievements
 
 Return a JSON object with:
 {
-  "summary": "2-3 sentence professional summary that positions the candidate perfectly for THIS role",
-  "skills": ["Skill 1", "Skill 2", ...] (up to 15, prioritized by job relevance, include exact terms from job posting),
-  "keywordInjections": ["keyword1", "keyword2", ...] (10-15 keywords extracted from job description),
+  "summary": "2-3 sentence professional summary based on real background, angled toward this role",
+  "skills": ["Skill 1", "Skill 2", ...] (up to 15, from candidate's REAL skills, prioritized by job relevance),
+  "keywordInjections": ["keyword1", "keyword2", ...] (8-12 keywords from job description that match candidate's actual skills),
   "experiences": [
     {
-      "title": "RESHAPED Job Title (angled toward target role)",
+      "title": "Real Job Title (optional short subtitle for context)",
       "company": "Company Name",
       "duration": "Period (e.g. 2024-2025)",
-      "description": "3-4 bullet points as a single string, each on new line with •, rewritten to emphasize relevance to target job. Use action verbs and quantified achievements."
+      "description": "3-4 bullet points as a single string, each on new line with •. Reframed to highlight aspects relevant to target job, but describing things the candidate ACTUALLY did. Use action verbs and quantified achievements where truthful."
     }
   ],
   "education": [
@@ -510,7 +515,7 @@ Return a JSON object with:
   ],
   "projects": [
     {
-      "name": "Project Name",
+      "name": "Real Project Name",
       "description": "Tailored description emphasizing aspects relevant to target job"
     }
   ],
@@ -521,10 +526,10 @@ Return a JSON object with:
 IMPORTANT FIELD NAMES: Use "experiences" (not "selectedExperiences"), "education" (not "selectedEducation"), "projects" (not "selectedProjects").
 
 Rules:
-- Be AGGRESSIVE with reshaping — the candidate gave explicit permission to "round corners" and reframe
-- Every experience description must use the LANGUAGE of the target job (technical terms, industry jargon)
-- tailoredHighlights should be 5 specific, compelling bullet points for THIS job
-- matchPercentage reflects estimated ATS pass rate
+- The number of experiences in output MUST match the number in the candidate's profile — no more, no less
+- Skills list must only contain technologies/skills the candidate actually has
+- tailoredHighlights should be specific to THIS job but truthful about the candidate
+- matchPercentage reflects realistic ATS pass rate
 - ATS-friendly: no special characters except standard punctuation, bullet points as •
 - Output must be valid JSON`;
 
@@ -532,25 +537,23 @@ Rules:
         ? `\nCandidate Profile:\n${JSON.stringify(profile, null, 2)}`
         : '';
 
-      const userPrompt = `Generate deeply tailored CV content for:
-Persona: ${persona.name} (${persona.title})
+      const userPrompt = `Generate tailored CV content for:
+Candidate: ${persona.name} (${persona.title})
 ${profileStr}
 
-Job Details:
+Target Job:
 Title: ${job.title}
 Company: ${job.company}
 Location: ${job.location || 'Not specified'}
 Description: ${job.description}
 Requirements: ${job.requirements || 'Not specified'}
 
-Think deeply about:
-- What does this company/role REALLY want (read between the lines)?
-- What is the job type (engineering, product, leadership, growth, data)?
-- Which of the candidate's experiences are most relevant?
-- What keywords appear in the job description that should be naturally woven in?
-- What 3-5 bullet points would make the candidate stand out for THIS specific role?
-
-Generate the CV content with heavy focus on THIS specific job match.`;
+IMPORTANT REMINDERS:
+- Keep the candidate's REAL job titles (you may add a short parenthetical subtitle, but don't replace the title)
+- Output EXACTLY the same number of experiences as in the candidate's profile — don't add or remove roles
+- Only list skills the candidate actually has
+- Reframe descriptions to highlight relevance to this job, but only describe things they really did
+- Weave in job keywords where they naturally fit the candidate's actual experience`;
 
       const response = await this.callAPI(systemPrompt, userPrompt);
       return this.parseJSON<any>(response);
