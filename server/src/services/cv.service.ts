@@ -5,7 +5,7 @@ import { aiClient } from '../ai/client';
 import { cvGenerationQueue } from '../queue';
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { Document, Packer, Paragraph, TextRun, HeadingLevel } from 'docx';
+import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, BorderStyle, TabStopPosition, TabStopType, convertInchesToTwip } from 'docx';
 // @ts-ignore — pdfkit uses default export, TypeScript namespace import breaks constructor
 const PDFDocument = require('pdfkit');
 
@@ -738,7 +738,7 @@ export class CVService {
     const fileName = `cv-${userProfile.id}-${Date.now()}.docx`;
     const filePath = path.join(this.cvOutputDir, fileName);
 
-    // Pull contact info from structured profile or fallback to top-level fields
+    // Pull contact info from structured profile
     const sp = (userProfile.structuredProfile || {}) as any;
     const pi = sp.personalInfo || {};
     const name = pi.fullName || userProfile.fullName || 'Professional';
@@ -747,152 +747,167 @@ export class CVService {
     const location = pi.location || userProfile.location || '';
     const linkedin = pi.linkedin || '';
     const github = pi.github || '';
-
     const contactParts = [email, phone, location, linkedin, github].filter(Boolean);
 
-    const sections = [
-      new Paragraph({
-        text: name,
-        heading: HeadingLevel.HEADING_1,
-        spacing: { after: 100 },
-      }),
-      new Paragraph({
-        text: contactParts.join(' | '),
-        spacing: { after: 200 },
-      }),
-    ];
+    // ATS-safe fonts: Calibri (default in modern Word), fallback to Arial
+    const FONT = 'Calibri';
+    const COLOR_DARK = '1a1a1a';
+    const COLOR_MED = '4a4a4a';
+    const COLOR_LIGHT = '666666';
+    const COLOR_ACCENT = '2563eb'; // blue-600
 
-    // Add summary
+    /** Helper: section heading with a thin bottom border */
+    const sectionHeading = (text: string) => new Paragraph({
+      children: [
+        new TextRun({ text: text.toUpperCase(), font: FONT, size: 22, bold: true, color: COLOR_DARK }),
+      ],
+      spacing: { before: 280, after: 80 },
+      border: { bottom: { style: BorderStyle.SINGLE, size: 4, color: 'cccccc', space: 4 } },
+    });
+
+    const children: Paragraph[] = [];
+
+    // ── Name ──
+    children.push(new Paragraph({
+      children: [new TextRun({ text: name, font: FONT, size: 32, bold: true, color: COLOR_DARK })],
+      spacing: { after: 40 },
+    }));
+
+    // ── Contact line ──
+    children.push(new Paragraph({
+      children: contactParts.map((part, i) => {
+        const runs: TextRun[] = [];
+        if (i > 0) runs.push(new TextRun({ text: '  |  ', font: FONT, size: 18, color: COLOR_LIGHT }));
+        runs.push(new TextRun({ text: part, font: FONT, size: 18, color: COLOR_MED }));
+        return runs;
+      }).flat(),
+      spacing: { after: 160 },
+    }));
+
+    // ── Professional Summary ──
     if (cvContent.summary) {
-      sections.push(
-        new Paragraph({
-          text: 'Professional Summary',
-          heading: HeadingLevel.HEADING_2,
-          spacing: { before: 100, after: 50 },
-        }),
-        new Paragraph({
-          text: cvContent.summary,
-          spacing: { after: 100 },
-        })
-      );
+      children.push(sectionHeading('Professional Summary'));
+      children.push(new Paragraph({
+        children: [new TextRun({ text: cvContent.summary, font: FONT, size: 20, color: COLOR_MED, italics: true })],
+        spacing: { after: 80 },
+      }));
     }
 
-    // Add skills
-    if (cvContent.skills && Array.isArray(cvContent.skills)) {
-      sections.push(
-        new Paragraph({
-          text: 'Skills',
-          heading: HeadingLevel.HEADING_2,
-          spacing: { before: 100, after: 50 },
-        }),
-        new Paragraph({
-          text: cvContent.skills.join(', '),
-          spacing: { after: 100 },
-        })
-      );
+    // ── Skills ──
+    if (cvContent.skills && Array.isArray(cvContent.skills) && cvContent.skills.length > 0) {
+      children.push(sectionHeading('Skills'));
+      children.push(new Paragraph({
+        children: [new TextRun({ text: cvContent.skills.join('  •  '), font: FONT, size: 19, color: COLOR_DARK })],
+        spacing: { after: 80 },
+      }));
     }
 
-    // Add experience (handle both "experiences" and "selectedExperiences" field names)
+    // ── Experience ──
     const experiences = cvContent.experiences || cvContent.selectedExperiences || [];
     if (Array.isArray(experiences) && experiences.length > 0) {
-      sections.push(
-        new Paragraph({
-          text: 'Experience',
-          heading: HeadingLevel.HEADING_2,
-          spacing: { before: 100, after: 50 },
-        })
-      );
+      children.push(sectionHeading('Experience'));
 
       for (const exp of experiences) {
-        sections.push(
-          new Paragraph({
-            children: [
-              new TextRun({ text: `${exp.title} | ${exp.company}`, bold: true }),
-              ...(exp.duration ? [new TextRun({ text: `  (${exp.duration})`, italics: true })] : []),
-            ],
-            spacing: { before: 80, after: 25 },
-          }),
-          new Paragraph({
-            text: exp.description,
-            spacing: { after: 50 },
-          })
-        );
+        // Title + Company line
+        children.push(new Paragraph({
+          children: [
+            new TextRun({ text: exp.title, font: FONT, size: 21, bold: true, color: COLOR_DARK }),
+            new TextRun({ text: `  |  ${exp.company}`, font: FONT, size: 20, color: COLOR_MED }),
+            ...(exp.duration ? [new TextRun({ text: `  (${exp.duration})`, font: FONT, size: 18, color: COLOR_LIGHT, italics: true })] : []),
+          ],
+          spacing: { before: 120, after: 40 },
+        }));
+
+        // Description — split bullet points if they contain •
+        const descText = exp.description || '';
+        const bullets = descText.split('•').map((b: string) => b.trim()).filter(Boolean);
+        if (bullets.length > 1) {
+          for (const bullet of bullets) {
+            children.push(new Paragraph({
+              children: [
+                new TextRun({ text: '•  ', font: FONT, size: 19, color: COLOR_ACCENT }),
+                new TextRun({ text: bullet, font: FONT, size: 19, color: COLOR_MED }),
+              ],
+              spacing: { after: 20 },
+              indent: { left: convertInchesToTwip(0.2) },
+            }));
+          }
+        } else {
+          children.push(new Paragraph({
+            children: [new TextRun({ text: descText, font: FONT, size: 19, color: COLOR_MED })],
+            spacing: { after: 40 },
+          }));
+        }
       }
     }
 
-    // Add education (handle both "education" and "selectedEducation" field names)
+    // ── Education ──
     const education = cvContent.education || cvContent.selectedEducation || [];
     if (Array.isArray(education) && education.length > 0) {
-      sections.push(
-        new Paragraph({
-          text: 'Education',
-          heading: HeadingLevel.HEADING_2,
-          spacing: { before: 100, after: 50 },
-        })
-      );
-
+      children.push(sectionHeading('Education'));
       for (const edu of education) {
-        sections.push(
-          new Paragraph({
-            children: [
-              new TextRun({ text: `${edu.degree}${edu.field ? `, ${edu.field}` : ''}`, bold: true }),
-              new TextRun({ text: ` — ${edu.school}` }),
-            ],
-            spacing: { before: 30, after: 30 },
-          })
-        );
+        children.push(new Paragraph({
+          children: [
+            new TextRun({ text: `${edu.degree}${edu.field ? `, ${edu.field}` : ''}`, font: FONT, size: 20, bold: true, color: COLOR_DARK }),
+            new TextRun({ text: `  —  ${edu.school}`, font: FONT, size: 19, color: COLOR_MED }),
+          ],
+          spacing: { before: 40, after: 40 },
+        }));
       }
     }
 
-    // Add projects (handle both "projects" and "selectedProjects" field names)
+    // ── Projects ──
     const projects = cvContent.projects || cvContent.selectedProjects || [];
     if (Array.isArray(projects) && projects.length > 0) {
-      sections.push(
-        new Paragraph({
-          text: 'Projects',
-          heading: HeadingLevel.HEADING_2,
-          spacing: { before: 100, after: 50 },
-        })
-      );
-
+      children.push(sectionHeading('Projects'));
       for (const proj of projects) {
-        sections.push(
-          new Paragraph({
-            children: [new TextRun({ text: proj.name, bold: true })],
-            spacing: { before: 30, after: 15 },
-          }),
-          new Paragraph({
-            text: proj.description,
-            spacing: { after: 30 },
-          })
-        );
+        children.push(new Paragraph({
+          children: [new TextRun({ text: proj.name, font: FONT, size: 20, bold: true, color: COLOR_DARK })],
+          spacing: { before: 60, after: 20 },
+        }));
+        children.push(new Paragraph({
+          children: [new TextRun({ text: proj.description, font: FONT, size: 19, color: COLOR_MED })],
+          spacing: { after: 40 },
+        }));
       }
     }
 
-    // Add tailored highlights if present
+    // ── Key Highlights ──
     if (cvContent.tailoredHighlights && Array.isArray(cvContent.tailoredHighlights) && cvContent.tailoredHighlights.length > 0) {
-      sections.push(
-        new Paragraph({
-          text: 'Key Highlights',
-          heading: HeadingLevel.HEADING_2,
-          spacing: { before: 100, after: 50 },
-        })
-      );
-
+      children.push(sectionHeading('Key Highlights'));
       for (const highlight of cvContent.tailoredHighlights) {
-        sections.push(
-          new Paragraph({
-            text: `• ${highlight}`,
-            spacing: { after: 20 },
-          })
-        );
+        children.push(new Paragraph({
+          children: [
+            new TextRun({ text: '•  ', font: FONT, size: 19, color: COLOR_ACCENT }),
+            new TextRun({ text: highlight, font: FONT, size: 19, color: COLOR_MED }),
+          ],
+          spacing: { after: 20 },
+          indent: { left: convertInchesToTwip(0.2) },
+        }));
       }
     }
 
     const doc = new Document({
+      styles: {
+        default: {
+          document: {
+            run: { font: FONT, size: 20, color: COLOR_DARK },
+          },
+        },
+      },
       sections: [
         {
-          children: sections,
+          properties: {
+            page: {
+              margin: {
+                top: convertInchesToTwip(0.7),
+                right: convertInchesToTwip(0.7),
+                bottom: convertInchesToTwip(0.7),
+                left: convertInchesToTwip(0.7),
+              },
+            },
+          },
+          children,
         },
       ],
     });
@@ -919,75 +934,109 @@ export class CVService {
     const github = pi.github || '';
     const contactParts = [email, phone, location, linkedin, github].filter(Boolean);
 
-    const doc = new PDFDocument();
-    const stream = require('fs').createWriteStream(filePath);
+    // ATS-safe: Helvetica family (built-in to PDF, universally supported)
+    const FONT_REG = 'Helvetica';
+    const FONT_BOLD = 'Helvetica-Bold';
+    const FONT_ITALIC = 'Helvetica-Oblique';
+    const COLOR_DARK = '#1a1a1a';
+    const COLOR_MED = '#4a4a4a';
+    const COLOR_LIGHT = '#888888';
+    const COLOR_ACCENT = '#2563eb';
+    const MARGIN = 50;
 
+    const doc = new PDFDocument({
+      size: 'A4',
+      margins: { top: MARGIN, bottom: MARGIN, left: MARGIN, right: MARGIN },
+    });
+    const stream = require('fs').createWriteStream(filePath);
     doc.pipe(stream);
 
-    // Add title
-    doc.fontSize(20).font('Helvetica-Bold').text(name);
-    doc.fontSize(10).font('Helvetica').text(contactParts.join(' | '));
-    doc.moveDown();
+    /** Draw a section heading with a thin line underneath */
+    const drawSectionHeading = (text: string) => {
+      doc.moveDown(0.6);
+      doc.fontSize(11).font(FONT_BOLD).fillColor(COLOR_DARK).text(text.toUpperCase(), { characterSpacing: 1.5 });
+      doc.moveTo(MARGIN, doc.y + 2).lineTo(doc.page.width - MARGIN, doc.y + 2).lineWidth(0.5).strokeColor('#cccccc').stroke();
+      doc.moveDown(0.4);
+    };
 
-    // Add summary
+    // ── Name ──
+    doc.fontSize(22).font(FONT_BOLD).fillColor(COLOR_DARK).text(name);
+    doc.moveDown(0.15);
+
+    // ── Contact line ──
+    doc.fontSize(9).font(FONT_REG).fillColor(COLOR_MED).text(contactParts.join('  |  '));
+    doc.moveDown(0.2);
+
+    // Thin separator
+    doc.moveTo(MARGIN, doc.y).lineTo(doc.page.width - MARGIN, doc.y).lineWidth(1).strokeColor(COLOR_ACCENT).stroke();
+
+    // ── Summary ──
     if (cvContent.summary) {
-      doc.fontSize(12).font('Helvetica-Bold').text('Professional Summary');
-      doc.fontSize(10).font('Helvetica').text(cvContent.summary);
-      doc.moveDown();
+      drawSectionHeading('Professional Summary');
+      doc.fontSize(9.5).font(FONT_ITALIC).fillColor(COLOR_MED).text(cvContent.summary, { lineGap: 2 });
     }
 
-    // Add skills
-    if (cvContent.skills && Array.isArray(cvContent.skills)) {
-      doc.fontSize(12).font('Helvetica-Bold').text('Skills');
-      doc.fontSize(10).font('Helvetica').text(cvContent.skills.join(', '));
-      doc.moveDown();
+    // ── Skills ──
+    if (cvContent.skills && Array.isArray(cvContent.skills) && cvContent.skills.length > 0) {
+      drawSectionHeading('Skills');
+      doc.fontSize(9.5).font(FONT_REG).fillColor(COLOR_DARK).text(cvContent.skills.join('  •  '), { lineGap: 2 });
     }
 
-    // Add experience (handle both field names)
+    // ── Experience ──
     const pdfExperiences = cvContent.experiences || cvContent.selectedExperiences || [];
     if (Array.isArray(pdfExperiences) && pdfExperiences.length > 0) {
-      doc.fontSize(12).font('Helvetica-Bold').text('Experience');
-      doc.moveDown(0.3);
+      drawSectionHeading('Experience');
+
       for (const exp of pdfExperiences) {
-        doc.fontSize(11).font('Helvetica-Bold').text(`${exp.title} | ${exp.company}${exp.duration ? `  (${exp.duration})` : ''}`);
-        doc.fontSize(10).font('Helvetica').text(exp.description);
-        doc.moveDown(0.5);
+        // Title + Company
+        doc.fontSize(10).font(FONT_BOLD).fillColor(COLOR_DARK).text(exp.title, { continued: true });
+        doc.font(FONT_REG).fillColor(COLOR_MED).text(`  |  ${exp.company}${exp.duration ? `  (${exp.duration})` : ''}`);
+        doc.moveDown(0.15);
+
+        // Description — handle bullet points
+        const descText = exp.description || '';
+        const bullets = descText.split('•').map((b: string) => b.trim()).filter(Boolean);
+        if (bullets.length > 1) {
+          for (const bullet of bullets) {
+            doc.fontSize(9.5).font(FONT_REG).fillColor(COLOR_MED).text(`•  ${bullet}`, {
+              indent: 10,
+              lineGap: 1.5,
+            });
+          }
+        } else {
+          doc.fontSize(9.5).font(FONT_REG).fillColor(COLOR_MED).text(descText, { lineGap: 1.5 });
+        }
+        doc.moveDown(0.3);
       }
     }
 
-    // Add education
+    // ── Education ──
     const pdfEducation = cvContent.education || cvContent.selectedEducation || [];
     if (Array.isArray(pdfEducation) && pdfEducation.length > 0) {
-      doc.moveDown(0.3);
-      doc.fontSize(12).font('Helvetica-Bold').text('Education');
-      doc.moveDown(0.3);
+      drawSectionHeading('Education');
       for (const edu of pdfEducation) {
-        doc.fontSize(10).font('Helvetica-Bold').text(`${edu.degree}${edu.field ? `, ${edu.field}` : ''}`);
-        doc.fontSize(10).font('Helvetica').text(edu.school);
-        doc.moveDown(0.3);
+        doc.fontSize(10).font(FONT_BOLD).fillColor(COLOR_DARK).text(`${edu.degree}${edu.field ? `, ${edu.field}` : ''}`, { continued: true });
+        doc.font(FONT_REG).fillColor(COLOR_MED).text(`  —  ${edu.school}`);
+        doc.moveDown(0.2);
       }
     }
 
-    // Add projects
+    // ── Projects ──
     const pdfProjects = cvContent.projects || cvContent.selectedProjects || [];
     if (Array.isArray(pdfProjects) && pdfProjects.length > 0) {
-      doc.moveDown(0.3);
-      doc.fontSize(12).font('Helvetica-Bold').text('Projects');
-      doc.moveDown(0.3);
+      drawSectionHeading('Projects');
       for (const proj of pdfProjects) {
-        doc.fontSize(10).font('Helvetica-Bold').text(proj.name);
-        doc.fontSize(10).font('Helvetica').text(proj.description);
-        doc.moveDown(0.3);
+        doc.fontSize(10).font(FONT_BOLD).fillColor(COLOR_DARK).text(proj.name);
+        doc.fontSize(9.5).font(FONT_REG).fillColor(COLOR_MED).text(proj.description, { lineGap: 1.5 });
+        doc.moveDown(0.2);
       }
     }
 
-    // Add tailored highlights
+    // ── Key Highlights ──
     if (cvContent.tailoredHighlights && Array.isArray(cvContent.tailoredHighlights) && cvContent.tailoredHighlights.length > 0) {
-      doc.moveDown(0.3);
-      doc.fontSize(12).font('Helvetica-Bold').text('Key Highlights');
-      doc.moveDown(0.3);
+      drawSectionHeading('Key Highlights');
       for (const highlight of cvContent.tailoredHighlights) {
-        doc.fontSize(10).font('Helvetica').text(`• ${highlight}`);
+        doc.fontSize(9.5).font(FONT_REG).fillColor(COLOR_MED).text(`•  ${highlight}`, { indent: 10, lineGap: 1.5 });
       }
     }
 
