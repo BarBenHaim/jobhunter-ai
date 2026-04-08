@@ -240,7 +240,18 @@ const Dashboard = () => {
     return config
   }, [enabledSources, minScore, searchLocation, customKeywords, experienceLevel, defaultLocation])
 
-  const [lastSearchResult, setLastSearchResult] = useState<{ sessionId: string; count: number } | null>(null)
+  const [lastSearchResult, setLastSearchResult] = useState<{
+    sessionId: string
+    count: number
+    keywords: string[]
+    smartKeywords?: { primary?: string[]; adjacent?: string[]; hebrew?: string[] }
+    sourceBreakdown: { source: string; scrapedCount: number }[]
+    totalScraped: number
+    totalFiltered: number
+    duplicates: number
+    avgScore: number
+    location: string
+  } | null>(null)
 
   const scrapeMutation = useMutation({
     mutationFn: () => {
@@ -250,16 +261,28 @@ const Dashboard = () => {
       )
     },
     onSuccess: (res) => {
-      const sessionId = res.data.searchSessionId
-      const count = res.data.totalJobsCreated
-      setLastSearchResult(sessionId ? { sessionId, count } : null)
-      setScrapeMessage(`נמצאו ${count} משרות חדשות!`)
+      const d = res.data
+      setLastSearchResult(d.searchSessionId ? {
+        sessionId: d.searchSessionId,
+        count: d.totalJobsCreated,
+        keywords: d.keywords || [],
+        smartKeywords: d.smartKeywords,
+        sourceBreakdown: d.sourceBreakdown || [],
+        totalScraped: d.totalScraped || 0,
+        totalFiltered: d.totalFiltered || 0,
+        duplicates: d.duplicates || 0,
+        avgScore: d.jobsCreated?.length > 0
+          ? Math.round(d.jobsCreated.reduce((s: number, j: any) => s + (j.smartScore || 0), 0) / d.jobsCreated.length)
+          : 0,
+        location: d.location || '',
+      } : null)
+      setScrapeMessage(`נמצאו ${d.totalJobsCreated} משרות חדשות!`)
       queryClient.invalidateQueries({ queryKey: ['scrape-status'] })
       queryClient.invalidateQueries({ queryKey: ['job-stats'] })
       queryClient.invalidateQueries({ queryKey: ['jobs'] })
       queryClient.invalidateQueries({ queryKey: ['costs-today'] })
       queryClient.invalidateQueries({ queryKey: ['search-history'] })
-      setTimeout(() => setScrapeMessage(null), 8000)
+      setTimeout(() => setScrapeMessage(null), 12000)
     },
     onError: (err: any) => {
       setScrapeMessage(`שגיאה: ${err?.response?.data?.error?.message || err.message}`)
@@ -359,6 +382,116 @@ const Dashboard = () => {
               <Eye size={12} />
               צפה בתוצאות
             </button>
+          )}
+        </div>
+      )}
+
+      {/* Search Results Summary — shows what the AI searched for and what it found */}
+      {lastSearchResult && lastSearchResult.count > 0 && (
+        <div className="rounded-2xl bg-white dark:bg-gray-800/80 border border-gray-100 dark:border-gray-700/50 p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Sparkles size={16} className="text-primary-500" />
+              <h3 className="text-sm font-bold text-gray-900 dark:text-white">סיכום חיפוש אחרון</h3>
+            </div>
+            <button
+              onClick={() => navigate(`/jobs?tab=lastSearch&sid=${lastSearchResult.sessionId}`)}
+              className="text-xs text-primary-600 dark:text-primary-400 hover:underline flex items-center gap-1"
+            >
+              <Eye size={12} />
+              צפה במשרות
+            </button>
+          </div>
+
+          {/* Stats row */}
+          <div className="grid grid-cols-4 gap-2">
+            <div className="rounded-xl bg-blue-50 dark:bg-blue-900/10 p-2.5 text-center">
+              <p className="text-lg font-bold text-gray-900 dark:text-white">{lastSearchResult.totalScraped}</p>
+              <p className="text-[10px] text-gray-500 dark:text-gray-400">נסרקו</p>
+            </div>
+            <div className="rounded-xl bg-emerald-50 dark:bg-emerald-900/10 p-2.5 text-center">
+              <p className="text-lg font-bold text-emerald-700 dark:text-emerald-400">{lastSearchResult.count}</p>
+              <p className="text-[10px] text-gray-500 dark:text-gray-400">נשמרו</p>
+            </div>
+            <div className="rounded-xl bg-amber-50 dark:bg-amber-900/10 p-2.5 text-center">
+              <p className="text-lg font-bold text-gray-900 dark:text-white">{lastSearchResult.duplicates}</p>
+              <p className="text-[10px] text-gray-500 dark:text-gray-400">כפולות</p>
+            </div>
+            <div className="rounded-xl bg-purple-50 dark:bg-purple-900/10 p-2.5 text-center">
+              <p className="text-lg font-bold text-purple-700 dark:text-purple-400">{lastSearchResult.avgScore}%</p>
+              <p className="text-[10px] text-gray-500 dark:text-gray-400">ציון ממוצע</p>
+            </div>
+          </div>
+
+          {/* What the AI searched for */}
+          <div>
+            <h4 className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1.5">מה AI חיפש</h4>
+            <div className="flex flex-wrap gap-1.5">
+              {lastSearchResult.keywords.slice(0, 12).map((kw, i) => (
+                <span key={i} className="px-2 py-0.5 rounded-lg bg-gray-100 dark:bg-gray-700 text-xs text-gray-700 dark:text-gray-300" dir="ltr">
+                  {kw}
+                </span>
+              ))}
+              {lastSearchResult.keywords.length > 12 && (
+                <span className="px-2 py-0.5 rounded-lg bg-gray-50 dark:bg-gray-800 text-xs text-gray-400">
+                  +{lastSearchResult.keywords.length - 12}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Smart keyword breakdown */}
+          {lastSearchResult.smartKeywords && (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              {lastSearchResult.smartKeywords.primary && lastSearchResult.smartKeywords.primary.length > 0 && (
+                <div className="rounded-lg bg-blue-50/50 dark:bg-blue-900/10 p-2">
+                  <p className="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase mb-1">תפקידים ישירים</p>
+                  <div className="flex flex-wrap gap-1">
+                    {lastSearchResult.smartKeywords.primary.map((kw, i) => (
+                      <span key={i} className="text-[11px] text-blue-700 dark:text-blue-300" dir="ltr">{kw}{i < lastSearchResult.smartKeywords!.primary!.length - 1 ? ',' : ''}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {lastSearchResult.smartKeywords.adjacent && lastSearchResult.smartKeywords.adjacent.length > 0 && (
+                <div className="rounded-lg bg-purple-50/50 dark:bg-purple-900/10 p-2">
+                  <p className="text-[10px] font-bold text-purple-600 dark:text-purple-400 uppercase mb-1">תפקידים סמוכים</p>
+                  <div className="flex flex-wrap gap-1">
+                    {lastSearchResult.smartKeywords.adjacent.map((kw, i) => (
+                      <span key={i} className="text-[11px] text-purple-700 dark:text-purple-300" dir="ltr">{kw}{i < lastSearchResult.smartKeywords!.adjacent!.length - 1 ? ',' : ''}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {lastSearchResult.smartKeywords.hebrew && lastSearchResult.smartKeywords.hebrew.length > 0 && (
+                <div className="rounded-lg bg-emerald-50/50 dark:bg-emerald-900/10 p-2">
+                  <p className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase mb-1">חיפוש בעברית</p>
+                  <div className="flex flex-wrap gap-1">
+                    {lastSearchResult.smartKeywords.hebrew.map((kw, i) => (
+                      <span key={i} className="text-[11px] text-emerald-700 dark:text-emerald-300">{kw}{i < lastSearchResult.smartKeywords!.hebrew!.length - 1 ? ',' : ''}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Source breakdown */}
+          {lastSearchResult.sourceBreakdown.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {lastSearchResult.sourceBreakdown.filter(s => s.scrapedCount > 0).map((s) => (
+                <span key={s.source} className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-gray-50 dark:bg-gray-900/40 text-xs">
+                  <span className="font-medium text-gray-700 dark:text-gray-300">{SOURCE_NAMES[s.source] || s.source}</span>
+                  <span className="text-gray-400">{s.scrapedCount}</span>
+                </span>
+              ))}
+              {lastSearchResult.location && (
+                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-gray-50 dark:bg-gray-900/40 text-xs text-gray-500">
+                  <MapPin size={10} />
+                  {lastSearchResult.location}
+                </span>
+              )}
+            </div>
           )}
         </div>
       )}
