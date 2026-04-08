@@ -9,6 +9,45 @@ import logger from '../utils/logger'
 
 const router = Router()
 
+// ─── Search History (in-memory) ───────────────────────────
+interface SearchHistoryEntry {
+  id: string
+  timestamp: string
+  config: {
+    sources?: string[]
+    minScore?: number
+    location?: string
+    keywords?: string[]
+    experienceLevel?: string
+  }
+  results: {
+    totalScraped: number
+    totalSaved: number
+    totalFiltered: number
+    duplicates: number
+    avgScore: number
+    jobIds: string[]
+  }
+}
+
+// Store last 20 searches per user
+const searchHistory: Map<string, SearchHistoryEntry[]> = new Map()
+
+function addSearchHistory(userId: string, entry: SearchHistoryEntry) {
+  const history = searchHistory.get(userId) || []
+  history.unshift(entry)
+  if (history.length > 20) history.pop()
+  searchHistory.set(userId, history)
+}
+
+function getSearchHistory(userId: string): SearchHistoryEntry[] {
+  return searchHistory.get(userId) || []
+}
+
+function generateSearchId(): string {
+  return `search_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`
+}
+
 // Default keywords including Hebrew terms for Israeli job sites
 const DEFAULT_KEYWORDS = [
   'React',
@@ -81,7 +120,17 @@ router.post('/smart-trigger', authMiddleware, async (req: AuthRequest, res: Resp
       return res.status(401).json({ success: false, error: 'Authentication required' })
     }
 
-    logger.info('Smart scrape triggered', { userId })
+    // Accept optional search configuration from the client
+    const searchConfig = {
+      sources: req.body.sources as string[] | undefined,       // e.g. ['INDEED','GOOGLE_JOBS','DRUSHIM']
+      minScore: req.body.minScore as number | undefined,       // e.g. 60
+      location: req.body.location as string | undefined,       // e.g. 'Tel Aviv'
+      keywords: req.body.keywords as string[] | undefined,     // e.g. ['React','Node.js']
+      experienceLevel: req.body.experienceLevel as string | undefined,
+    }
+
+    const searchSessionId = generateSearchId()
+    logger.info('Smart scrape triggered', { userId, searchConfig, searchSessionId })
 
     // Step 1: Fetch user profile
     let profile: any
@@ -127,11 +176,16 @@ router.post('/smart-trigger', authMiddleware, async (req: AuthRequest, res: Resp
       ? smartKeywords.combined
       : DEFAULT_KEYWORDS
 
+    // If user supplied custom keywords, prefer those; otherwise use smart + profile keywords
+    const finalKeywords = searchConfig.keywords?.length
+      ? searchConfig.keywords
+      : keywordsToUse
+
     // IMPORTANT: Each scrapeAll call costs 2 SerpAPI credits (Indeed + Google Jobs).
     // To avoid burning through credits, we batch keywords into a few combined queries
     // instead of running 12 separate scrapeAll calls (which would cost 24 credits!).
-    const allKeywords = keywordsToUse.slice(0, 15)
-    const location = preferences?.preferredLocations?.[0] || req.body.location || 'Israel'
+    const allKeywords = finalKeywords.slice(0, 15)
+    const location = searchConfig.location || preferences?.preferredLocations?.[0] || 'Israel'
 
     // Group keywords into max 3 batches (= max 6 SerpAPI calls instead of 24+)
     const BATCH_SIZE = 3
@@ -155,7 +209,8 @@ router.post('/smart-trigger', authMiddleware, async (req: AuthRequest, res: Resp
     for (const batch of keywordBatches) {
       try {
         // scrapeAll joins the keywords array into a single search query
-        const results = await lightweightScraperService.scrapeAll(batch, location)
+        // Pass enabled sources filter if configured
+        const results = await lightweightScraperService.scrapeAll(batch, location, searchConfig.sources)
         for (const result of results) {
           if (result.jobs?.length > 0) {
             allJobs.push(...result.jobs)
@@ -183,12 +238,12 @@ router.post('/smart-trigger', authMiddleware, async (req: AuthRequest, res: Resp
     const jobsCreated: any[] = []
     const scoredJobs: any[] = []
 
+    const minScoreThreshold = searchConfig.minScore || 0
+
     for (const job of relevantJobs) {
       try {
         const created = await jobService.createJob(job)
         if (created) {
-          saved++
-
           // Score locally — instant, no API call
           const smartScore = scoreJobLocally(
             {
@@ -203,6 +258,26 @@ router.post('/smart-trigger', authMiddleware, async (req: AuthRequest, res: Resp
             preferences
           )
 
+          // If minimum score is configured, skip jobs below the threshold
+          if (minScoreThreshold > 0 && smartScore.score < minScoreThreshold) {
+            // Still save the score metadata so we have it if they change the filter later
+            try {
+              await jobService.updateJobMetadata(created.id, {
+                smartScore: smartScore.score,
+                smartCategory: smartScore.category,
+                smartReasoning: smartScore.reasoning,
+                matchedSkills: smartScore.matchedSkills,
+                missingSkills: smartScore.missingSkills,
+                scoredAt: new Date().toISOString(),
+                searchSessionId,
+              })
+            } catch (_) { /* non-critical */ }
+            saved++
+            continue
+          }
+
+          saved++
+
           const jobWithScore = {
             id: created.id,
             title: created.title,
@@ -215,7 +290,7 @@ router.post('/smart-trigger', authMiddleware, async (req: AuthRequest, res: Resp
 
           jobsCreated.push(jobWithScore)
 
-          // Store smart score in job metadata
+          // Store smart score in job metadata (+ search session ID)
           try {
             await jobService.updateJobMetadata(created.id, {
               smartScore: smartScore.score,
@@ -229,6 +304,7 @@ router.post('/smart-trigger', authMiddleware, async (req: AuthRequest, res: Resp
               experienceMatch: smartScore.experienceMatch,
               roleRelevance: smartScore.roleRelevance,
               scoredAt: new Date().toISOString(),
+              searchSessionId,
             })
           } catch (metaErr) {
             logger.warn('Could not save smart score metadata', { jobId: created.id })
@@ -246,20 +322,45 @@ router.post('/smart-trigger', authMiddleware, async (req: AuthRequest, res: Resp
     // Sort created jobs by smart score
     jobsCreated.sort((a, b) => (b.smartScore || 0) - (a.smartScore || 0))
 
+    const avgScore = jobsCreated.length > 0
+      ? Math.round(jobsCreated.reduce((sum, j) => sum + (j.smartScore || 0), 0) / jobsCreated.length)
+      : 0
+
     logger.info('Smart scrape completed', {
       total: allJobs.length,
       relevant: relevantJobs.length,
       saved,
       duplicates,
-      avgScore: jobsCreated.length > 0
-        ? Math.round(jobsCreated.reduce((sum, j) => sum + (j.smartScore || 0), 0) / jobsCreated.length)
-        : 0,
+      avgScore,
+      searchSessionId,
+    })
+
+    // Save to search history
+    addSearchHistory(userId, {
+      id: searchSessionId,
+      timestamp: new Date().toISOString(),
+      config: {
+        sources: searchConfig.sources,
+        minScore: searchConfig.minScore,
+        location,
+        keywords: allKeywords,
+        experienceLevel: searchConfig.experienceLevel,
+      },
+      results: {
+        totalScraped: allJobs.length,
+        totalSaved: saved,
+        totalFiltered: filtered,
+        duplicates,
+        avgScore,
+        jobIds: jobsCreated.map(j => j.id),
+      },
     })
 
     res.json({
       success: true,
       message: `חיפוש חכם הושלם: ${saved} משרות רלוונטיות נמצאו`,
       data: {
+        searchSessionId,
         totalJobsCreated: saved,
         totalScraped: allJobs.length,
         totalFiltered: filtered,
@@ -584,6 +685,25 @@ router.get('/test/:source', async (req: Request, res: Response) => {
   } catch (error) {
     logger.error('Test scrape error:', error)
     res.status(500).json({ success: false, error: 'Failed to test source' })
+  }
+})
+
+// GET /api/scrape/search-history - Get the user's search history
+router.get('/search-history', authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.userId
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Authentication required' })
+    }
+
+    const history = getSearchHistory(userId)
+    res.json({
+      success: true,
+      data: history,
+    })
+  } catch (error) {
+    logger.error('Search history error:', error)
+    res.status(500).json({ success: false, error: 'Failed to get search history' })
   }
 })
 

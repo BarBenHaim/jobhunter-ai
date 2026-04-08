@@ -266,6 +266,8 @@ export interface JobFilters {
   search?: string
   sort?: string
   order?: 'asc' | 'desc'
+  searchSessionId?: string
+  minSmartScore?: number
 }
 
 export interface ApplicationFilters {

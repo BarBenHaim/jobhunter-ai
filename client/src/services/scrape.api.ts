@@ -1,16 +1,25 @@
 import apiClient from './api'
 import { ScrapeSource, ScrapeStatus, ScrapeTriggerResult } from '@/types'
 
+export interface SearchConfig {
+  sources?: string[]
+  minScore?: number
+  location?: string
+  keywords?: string[]
+  experienceLevel?: string
+}
+
 export const scrapeApi = {
   /**
    * Smart scrape — AI analyzes user profile, generates smart keywords,
    * scrapes with expanded terms, and scores every job locally.
    * Requires authentication.
+   * Accepts optional SearchConfig to control sources, min score, location, keywords.
    */
   async smartTriggerScrape(
-    location?: string
+    config?: SearchConfig
   ): Promise<{ success: boolean; message: string; data: any }> {
-    const { data } = await apiClient.post('/scrape/smart-trigger', { location })
+    const { data } = await apiClient.post('/scrape/smart-trigger', config || {})
     return data
   },
 
@@ -51,5 +60,30 @@ export const scrapeApi = {
     })
     return data
   },
+
+  async getSearchHistory(): Promise<{ success: boolean; data: SearchHistoryEntry[] }> {
+    const { data } = await apiClient.get('/scrape/search-history')
+    return data
+  },
+}
+
+export interface SearchHistoryEntry {
+  id: string
+  timestamp: string
+  config: {
+    sources?: string[]
+    minScore?: number
+    location?: string
+    keywords?: string[]
+    experienceLevel?: string
+  }
+  results: {
+    totalScraped: number
+    totalSaved: number
+    totalFiltered: number
+    duplicates: number
+    avgScore: number
+    jobIds: string[]
+  }
 }
 

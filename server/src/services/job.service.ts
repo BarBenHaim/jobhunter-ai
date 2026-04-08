@@ -16,6 +16,7 @@ export class JobService {
       const offset = pagination.offset || 0;
       const sortBy = pagination.sortBy || 'createdAt';
       const sortOrder = pagination.sortOrder || 'desc';
+      const isSmartScoreSort = sortBy === 'smartScore';
 
       logger.info(`Listing jobs for user: ${userId}`, { filters, pagination });
 
@@ -106,8 +107,25 @@ export class JobService {
         };
       }
 
-      const [jobs, total] = await Promise.all([
-        prisma.job.findMany({
+      // Filter by search session ID (stored in rawData.searchSessionId)
+      if (filters.searchSessionId) {
+        where.rawData = {
+          ...(where.rawData || {}),
+          path: ['searchSessionId'],
+          equals: filters.searchSessionId,
+        };
+      }
+
+      // Note: minSmartScore filtering is handled post-query (JSON field)
+      const minSmartScore = filters.minSmartScore as number | undefined;
+
+      // For smartScore sort we need raw SQL because Prisma can't sort by JSON fields easily
+      let jobs: any[];
+      let total: number;
+
+      if (isSmartScoreSort || minSmartScore) {
+        // Fetch all matching jobs to sort by JSON smartScore and/or filter by minSmartScore
+        let allJobs = await prisma.job.findMany({
           where,
           include: {
             scores: {
@@ -121,12 +139,51 @@ export class JobService {
               select: { id: true, status: true },
             },
           },
-          take: limit,
-          skip: offset,
-          orderBy: { [sortBy]: sortOrder },
-        }),
-        prisma.job.count({ where }),
-      ]);
+        });
+
+        // Filter by minimum smart score if requested
+        if (minSmartScore) {
+          allJobs = allJobs.filter((j: any) => {
+            const score = (j.rawData as any)?.smartScore ?? (j.scores?.[0]?.overallScore ?? 0);
+            return score >= minSmartScore;
+          });
+        }
+
+        // Sort by smartScore from rawData (if smartScore sort requested)
+        if (isSmartScoreSort) {
+          allJobs.sort((a: any, b: any) => {
+            const aScore = (a.rawData as any)?.smartScore ?? (a.scores?.[0]?.overallScore ?? 0);
+            const bScore = (b.rawData as any)?.smartScore ?? (b.scores?.[0]?.overallScore ?? 0);
+            return sortOrder === 'desc' ? bScore - aScore : aScore - bScore;
+          });
+        }
+
+        total = allJobs.length;
+        // Paginate
+        jobs = allJobs.slice(offset, offset + limit);
+      } else {
+        [jobs, total] = await Promise.all([
+          prisma.job.findMany({
+            where,
+            include: {
+              scores: {
+                select: {
+                  personaId: true,
+                  overallScore: true,
+                  recommendation: true,
+                },
+              },
+              applications: {
+                select: { id: true, status: true },
+              },
+            },
+            take: limit,
+            skip: offset,
+            orderBy: { [sortBy]: sortOrder },
+          }),
+          prisma.job.count({ where }),
+        ]);
+      }
 
       logger.info(`Found ${jobs.length} jobs for user: ${userId}`);
 

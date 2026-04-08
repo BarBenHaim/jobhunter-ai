@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Search,
   MapPin,
@@ -19,6 +19,9 @@ import {
   Sparkles,
   CheckCircle,
   AlertCircle,
+  SlidersHorizontal,
+  History,
+  Zap,
 } from 'lucide-react'
 import { Card } from '@/components/common/Card'
 import { Badge } from '@/components/common/Badge'
@@ -27,6 +30,7 @@ import { EmptyState } from '@/components/common/EmptyState'
 import { Job, JobFilters } from '@/types'
 import { jobsApi } from '@/services/jobs.api'
 import { cvApi } from '@/services/cv.api'
+import { scrapeApi, SearchHistoryEntry } from '@/services/scrape.api'
 
 const SOURCE_DISPLAY: Record<string, { label: string; color: 'primary' | 'success' | 'warning' | 'error' | 'gray' }> = {
   LINKEDIN: { label: 'LinkedIn', color: 'primary' },
@@ -310,27 +314,40 @@ const CVModal = ({ job, onClose }: { job: any; onClose: () => void }) => {
   )
 }
 
-type TimeTab = 'new' | 'week' | 'all'
+type TimeTab = 'lastSearch' | 'new' | 'week' | 'all'
 
-const TIME_TABS: { key: TimeTab; label: string; datePosted?: string }[] = [
-  { key: 'new', label: 'חדשות', datePosted: '24h' },
-  { key: 'week', label: 'השבוע', datePosted: '7d' },
-  { key: 'all', label: 'כל המשרות' },
+const MIN_SCORE_OPTIONS = [
+  { value: 0, label: 'הכל' },
+  { value: 40, label: '40%+' },
+  { value: 50, label: '50%+' },
+  { value: 60, label: '60%+' },
+  { value: 70, label: '70%+' },
+  { value: 80, label: '80%+' },
 ]
 
 const JobBrowser = () => {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [page, setPage] = useState(1)
   const [expandedJob, setExpandedJob] = useState<string | null>(null)
   const [searchInput, setSearchInput] = useState('')
   const [locationInput, setLocationInput] = useState('')
   const [advancedOpen, setAdvancedOpen] = useState(false)
-  const [sortByMatch, setSortByMatch] = useState(false)
-  const [activeTab, setActiveTab] = useState<TimeTab>('all')
+  const [sortByMatch, setSortByMatch] = useState(true)
   const [cvModalJob, setCvModalJob] = useState<any>(null)
+  const [historyOpen, setHistoryOpen] = useState(false)
+
+  // Initialize tab from URL param (e.g. ?tab=lastSearch&sid=search_xxx)
+  const urlTab = searchParams.get('tab') as TimeTab | null
+  const urlSessionId = searchParams.get('sid') || ''
+  const [activeTab, setActiveTab] = useState<TimeTab>(urlTab || 'all')
+  const [activeSearchSession, setActiveSearchSession] = useState<string>(urlSessionId)
+  const [minScoreFilter, setMinScoreFilter] = useState<number>(0)
+
   const [filters, setFilters] = useState<JobFilters>({
-    sort: 'createdAt',
+    sort: 'smartScore',
     order: 'desc',
+    ...(urlSessionId ? { searchSessionId: urlSessionId } : {}),
   })
 
   // Debounced search
@@ -354,20 +371,43 @@ const JobBrowser = () => {
     return () => clearTimeout(timer)
   }, [locationInput])
 
-  // Merge tab's datePosted with manual filters (tab takes priority unless user picks a different date filter)
-  const tabDatePosted = TIME_TABS.find(t => t.key === activeTab)?.datePosted
+  // Fetch search history
+  const { data: searchHistory } = useQuery({
+    queryKey: ['search-history'],
+    queryFn: async () => {
+      const res = await scrapeApi.getSearchHistory()
+      return res.data || []
+    },
+    staleTime: 30_000,
+  })
+
+  // Determine the last search session from history (for "חיפוש אחרון" tab)
+  const lastSearch = searchHistory?.[0]
+
+  // Compute effective tab filters
+  const getTabDatePosted = (tab: TimeTab) => {
+    if (tab === 'new') return '24h'
+    if (tab === 'week') return '7d'
+    return undefined
+  }
+
+  const tabDatePosted = getTabDatePosted(activeTab)
   const effectiveDatePosted = filters.datePosted || tabDatePosted
 
   const queryParams: JobFilters = {
     page,
     limit: 20,
     ...filters,
-    datePosted: effectiveDatePosted,
+    datePosted: activeTab !== 'lastSearch' ? effectiveDatePosted : undefined,
     search: debouncedSearch || undefined,
+    ...(activeTab === 'lastSearch' && activeSearchSession
+      ? { searchSessionId: activeSearchSession }
+      : {}),
+    ...(minScoreFilter > 0 ? { minSmartScore: minScoreFilter } : {}),
   }
 
   const { data: jobsResponse, isLoading, isError, refetch } = useQuery({
-    queryKey: ['jobs', page, filters, debouncedSearch, activeTab],
+    queryKey: ['jobs', page, filters, debouncedSearch, activeTab, activeSearchSession, minScoreFilter],
     queryFn: async () => {
       const res = await jobsApi.list(queryParams)
       return res
@@ -401,15 +441,17 @@ const JobBrowser = () => {
   })
 
   const rawJobs: Job[] = jobsResponse?.data || []
-  // Client-side sort by smart score if enabled
-  const jobs = sortByMatch
-    ? [...rawJobs].sort((a: any, b: any) => {
-        const aScore = a.rawData?.smartScore ?? (a.scores?.[0]?.overallScore ?? 0)
-        const bScore = b.rawData?.smartScore ?? (b.scores?.[0]?.overallScore ?? 0)
-        return bScore - aScore
-      })
-    : rawJobs
+  const jobs = rawJobs
   const meta = jobsResponse?.meta || { total: 0, page: 1, limit: 20, pages: 1, hasMore: false }
+
+  // Helper: switch to a specific search session
+  const switchToSearchSession = (sessionId: string) => {
+    setActiveTab('lastSearch')
+    setActiveSearchSession(sessionId)
+    setFilters(prev => ({ ...prev, searchSessionId: sessionId, datePosted: undefined }))
+    setPage(1)
+    setHistoryOpen(false)
+  }
 
   const formatDate = (date: string | Date | undefined) => {
     if (!date) return ''
@@ -456,43 +498,182 @@ const JobBrowser = () => {
     )
   }
 
-  const tabCounts: Record<TimeTab, number | undefined> = {
+  const tabCounts: Record<string, number | undefined> = {
     new: countNew,
     week: countWeek,
     all: countAll,
   }
 
+  // Format search time for history
+  const fmtSearchTime = (ts: string) => {
+    const d = new Date(ts)
+    const now = new Date()
+    const diff = now.getTime() - d.getTime()
+    const mins = Math.floor(diff / 60000)
+    if (mins < 1) return 'עכשיו'
+    if (mins < 60) return `לפני ${mins} דקות`
+    const hours = Math.floor(mins / 60)
+    if (hours < 24) return `לפני ${hours} שעות`
+    return d.toLocaleDateString('he-IL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+  }
+
+  // Check if any non-default filters are active
+  const hasActiveFilters = !!(filters.source || filters.locationType || filters.experienceLevel || filters.location || minScoreFilter > 0 || !sortByMatch)
+
   return (
     <div className="space-y-4" dir="rtl">
-      {/* Time Tabs */}
-      <div className="flex gap-1 p-1 bg-gray-100 dark:bg-gray-800 rounded-xl w-fit">
-        {TIME_TABS.map((tab) => {
-          const isActive = activeTab === tab.key
-          const count = tabCounts[tab.key]
-          return (
+      {/* Time Tabs + Search History */}
+      <div className="flex items-center gap-2">
+        <div className="flex gap-1 p-1 bg-gray-100 dark:bg-gray-800 rounded-xl">
+          {/* Last Search tab */}
+          {lastSearch && (
             <button
-              key={tab.key}
-              onClick={() => { setActiveTab(tab.key); setPage(1); setFilters(prev => ({ ...prev, datePosted: undefined })) }}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
-                isActive
+              onClick={() => {
+                switchToSearchSession(lastSearch.id)
+              }}
+              className={`px-3 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5 ${
+                activeTab === 'lastSearch'
                   ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
                   : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
               }`}
             >
-              {tab.label}
-              {count != null && (
-                <span className={`text-xs px-1.5 py-0.5 rounded-full font-bold ${
-                  isActive
-                    ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400'
-                    : 'bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400'
-                }`}>
-                  {count}
-                </span>
-              )}
+              <Zap size={13} />
+              חיפוש אחרון
+              <span className={`text-xs px-1.5 py-0.5 rounded-full font-bold ${
+                activeTab === 'lastSearch'
+                  ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400'
+                  : 'bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400'
+              }`}>
+                {lastSearch.results.totalSaved}
+              </span>
             </button>
-          )
-        })}
+          )}
+
+          {/* Standard tabs */}
+          {[
+            { key: 'new' as TimeTab, label: 'חדשות' },
+            { key: 'week' as TimeTab, label: 'השבוע' },
+            { key: 'all' as TimeTab, label: 'כל המשרות' },
+          ].map((tab) => {
+            const isActive = activeTab === tab.key
+            const count = tabCounts[tab.key]
+            return (
+              <button
+                key={tab.key}
+                onClick={() => {
+                  setActiveTab(tab.key)
+                  setActiveSearchSession('')
+                  setPage(1)
+                  setFilters(prev => ({
+                    ...prev,
+                    datePosted: undefined,
+                    searchSessionId: undefined,
+                    sort: sortByMatch ? 'smartScore' : 'createdAt',
+                  }))
+                }}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
+                  isActive
+                    ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
+                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                }`}
+              >
+                {tab.label}
+                {count != null && (
+                  <span className={`text-xs px-1.5 py-0.5 rounded-full font-bold ${
+                    isActive
+                      ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400'
+                      : 'bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400'
+                  }`}>
+                    {count}
+                  </span>
+                )}
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Search history dropdown */}
+        {searchHistory && searchHistory.length > 0 && (
+          <div className="relative">
+            <button
+              onClick={() => setHistoryOpen(!historyOpen)}
+              className={`p-2.5 rounded-xl border text-sm transition-all ${
+                historyOpen
+                  ? 'border-primary-400 bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-400 dark:border-primary-600'
+                  : 'border-gray-200 text-gray-500 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700/30'
+              }`}
+              title="היסטוריית חיפושים"
+            >
+              <History size={18} />
+            </button>
+
+            {historyOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setHistoryOpen(false)} />
+                <div className="absolute left-0 top-full mt-2 w-80 bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-xl z-50 overflow-hidden">
+                  <div className="p-3 border-b border-gray-100 dark:border-gray-700/50">
+                    <h3 className="text-sm font-bold text-gray-900 dark:text-white">היסטוריית חיפושים</h3>
+                  </div>
+                  <div className="max-h-72 overflow-y-auto p-2 space-y-1">
+                    {searchHistory.map((entry: SearchHistoryEntry) => (
+                      <button
+                        key={entry.id}
+                        onClick={() => switchToSearchSession(entry.id)}
+                        className={`w-full p-3 rounded-xl text-right transition-all ${
+                          activeSearchSession === entry.id
+                            ? 'bg-primary-50 border border-primary-200 dark:bg-primary-900/20 dark:border-primary-700'
+                            : 'hover:bg-gray-50 dark:hover:bg-gray-700/30'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-xs text-gray-400">{fmtSearchTime(entry.timestamp)}</span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-sm font-bold text-gray-900 dark:text-white">{entry.results.totalSaved}</span>
+                            <span className="text-xs text-gray-400">משרות</span>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {entry.config.keywords?.slice(0, 4).map((kw, i) => (
+                            <span key={i} className="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-[10px] text-gray-600 dark:text-gray-400" dir="ltr">
+                              {kw}
+                            </span>
+                          ))}
+                          {entry.config.location && (
+                            <span className="px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-900/20 text-[10px] text-blue-600 dark:text-blue-400">
+                              {entry.config.location}
+                            </span>
+                          )}
+                          {entry.results.avgScore > 0 && (
+                            <span className="px-1.5 py-0.5 rounded bg-green-50 dark:bg-green-900/20 text-[10px] text-green-600 dark:text-green-400">
+                              ממוצע {entry.results.avgScore}%
+                            </span>
+                          )}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
+
+      {/* Last Search info banner */}
+      {activeTab === 'lastSearch' && lastSearch && activeSearchSession === lastSearch.id && (
+        <div className="rounded-xl bg-blue-50 dark:bg-blue-900/10 border border-blue-200/50 dark:border-blue-700/30 p-3 flex items-center gap-3">
+          <Zap size={16} className="text-blue-600 dark:text-blue-400 flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm text-blue-800 dark:text-blue-300">
+              <strong>חיפוש אחרון</strong> — {lastSearch.results.totalSaved} משרות נמצאו
+              {lastSearch.config.keywords?.length ? ` • ${lastSearch.config.keywords.slice(0, 3).join(', ')}` : ''}
+              {lastSearch.config.location ? ` • ${lastSearch.config.location}` : ''}
+              {lastSearch.results.avgScore > 0 ? ` • ציון ממוצע ${lastSearch.results.avgScore}%` : ''}
+            </p>
+          </div>
+          <span className="text-xs text-blue-500 dark:text-blue-400 flex-shrink-0">{fmtSearchTime(lastSearch.timestamp)}</span>
+        </div>
+      )}
 
       {/* Search Bar */}
       <div className="flex gap-2">
@@ -508,6 +689,18 @@ const JobBrowser = () => {
         </div>
         <button
           type="button"
+          onClick={() => setAdvancedOpen(!advancedOpen)}
+          className={`p-2.5 rounded-xl border transition-colors ${
+            advancedOpen || hasActiveFilters
+              ? 'border-primary-400 bg-primary-50 text-primary-600 dark:bg-primary-900/20 dark:text-primary-400 dark:border-primary-600'
+              : 'border-gray-200 text-gray-500 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800'
+          }`}
+          title="פילטרים מתקדמים"
+        >
+          <SlidersHorizontal size={18} />
+        </button>
+        <button
+          type="button"
           onClick={() => refetch()}
           className="p-2.5 rounded-xl border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
           title="רענון"
@@ -516,77 +709,167 @@ const JobBrowser = () => {
         </button>
       </div>
 
-      {/* Filters Row */}
-      <div className="flex flex-wrap gap-2 items-center">
-        <select
-          value={filters.source || ''}
-          onChange={(e) => { setFilters({ ...filters, source: e.target.value || undefined }); setPage(1) }}
-          className="px-3 py-2 rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
-        >
-          <option value="">כל המקורות</option>
-          {Object.entries(SOURCE_DISPLAY).map(([key, info]) => (
-            <option key={key} value={key}>{info.label}</option>
-          ))}
-        </select>
+      {/* Advanced Filters Panel */}
+      {advancedOpen && (
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-800/50 p-4 space-y-3">
+          <div className="flex items-center justify-between mb-1">
+            <h4 className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">פילטרים מתקדמים</h4>
+            {hasActiveFilters && (
+              <button
+                onClick={() => {
+                  setFilters({ sort: 'smartScore', order: 'desc' })
+                  setLocationInput('')
+                  setSortByMatch(true)
+                  setMinScoreFilter(0)
+                  setPage(1)
+                }}
+                className="text-xs text-red-500 hover:text-red-600 font-medium"
+              >
+                נקה הכל
+              </button>
+            )}
+          </div>
 
-        <select
-          value={filters.locationType || ''}
-          onChange={(e) => { setFilters({ ...filters, locationType: e.target.value || undefined }); setPage(1) }}
-          className="px-3 py-2 rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
-        >
-          <option value="">סוג עבודה</option>
-          <option value="REMOTE">Remote</option>
-          <option value="HYBRID">Hybrid</option>
-          <option value="ONSITE">On-site</option>
-        </select>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {/* Min Score */}
+            <div>
+              <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block">ציון התאמה מינימלי</label>
+              <select
+                value={minScoreFilter}
+                onChange={(e) => { setMinScoreFilter(Number(e.target.value)); setPage(1) }}
+                className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
+              >
+                {MIN_SCORE_OPTIONS.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
 
-        <select
-          value={filters.experienceLevel || ''}
-          onChange={(e) => { setFilters({ ...filters, experienceLevel: e.target.value || undefined }); setPage(1) }}
-          className="px-3 py-2 rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
-        >
-          <option value="">רמת ניסיון</option>
-          <option value="ENTRY">Entry Level</option>
-          <option value="JUNIOR">Junior</option>
-          <option value="MID">Mid Level</option>
-          <option value="SENIOR">Senior</option>
-          <option value="LEAD">Lead</option>
-        </select>
+            {/* Source */}
+            <div>
+              <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block">מקור</label>
+              <select
+                value={filters.source || ''}
+                onChange={(e) => { setFilters({ ...filters, source: e.target.value || undefined }); setPage(1) }}
+                className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
+              >
+                <option value="">כל המקורות</option>
+                {Object.entries(SOURCE_DISPLAY).map(([key, info]) => (
+                  <option key={key} value={key}>{info.label}</option>
+                ))}
+              </select>
+            </div>
 
-        {/* Sort by match toggle */}
-        <button
-          onClick={() => setSortByMatch(!sortByMatch)}
-          className={`px-3 py-2 rounded-xl border text-sm font-medium transition-all ${
-            sortByMatch
-              ? 'border-primary-400 bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-400 dark:border-primary-600'
-              : 'border-gray-200 bg-white text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400'
-          }`}
-        >
-          <Target size={14} className="inline ml-1" />
-          מיון לפי התאמה
-        </button>
+            {/* Location type */}
+            <div>
+              <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block">סוג עבודה</label>
+              <select
+                value={filters.locationType || ''}
+                onChange={(e) => { setFilters({ ...filters, locationType: e.target.value || undefined }); setPage(1) }}
+                className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
+              >
+                <option value="">הכל</option>
+                <option value="REMOTE">Remote</option>
+                <option value="HYBRID">Hybrid</option>
+                <option value="ONSITE">On-site</option>
+              </select>
+            </div>
 
-        {(filters.source || filters.locationType || filters.experienceLevel || filters.location || sortByMatch) && (
-          <button
-            onClick={() => {
-              setFilters({ sort: 'createdAt', order: 'desc' })
-              setLocationInput('')
-              setSearchInput('')
-              setSortByMatch(false)
-              setPage(1)
-            }}
-            className="px-3 py-2 text-sm text-red-500 hover:text-red-600 font-medium"
-          >
-            נקה פילטרים
-          </button>
-        )}
-      </div>
+            {/* Experience */}
+            <div>
+              <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block">רמת ניסיון</label>
+              <select
+                value={filters.experienceLevel || ''}
+                onChange={(e) => { setFilters({ ...filters, experienceLevel: e.target.value || undefined }); setPage(1) }}
+                className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
+              >
+                <option value="">הכל</option>
+                <option value="ENTRY">Entry Level</option>
+                <option value="JUNIOR">Junior</option>
+                <option value="MID">Mid Level</option>
+                <option value="SENIOR">Senior</option>
+                <option value="LEAD">Lead</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Location search + sort toggle */}
+          <div className="flex gap-3 items-end">
+            <div className="flex-1">
+              <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block">חיפוש מיקום</label>
+              <div className="relative">
+                <MapPin size={14} className="absolute right-3 top-2.5 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="תל אביב, ירושלים..."
+                  value={locationInput}
+                  onChange={(e) => setLocationInput(e.target.value)}
+                  className="w-full pr-9 pl-3 py-2 rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
+                />
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                const newSortByMatch = !sortByMatch
+                setSortByMatch(newSortByMatch)
+                setFilters(prev => ({
+                  ...prev,
+                  sort: newSortByMatch ? 'smartScore' : 'createdAt',
+                }))
+                setPage(1)
+              }}
+              className={`px-3 py-2 rounded-xl border text-sm font-medium transition-all whitespace-nowrap ${
+                sortByMatch
+                  ? 'border-primary-400 bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-400 dark:border-primary-600'
+                  : 'border-gray-200 bg-white text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400'
+              }`}
+            >
+              <Target size={14} className="inline ml-1" />
+              מיון לפי התאמה
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Active filters summary (chips) */}
+      {hasActiveFilters && !advancedOpen && (
+        <div className="flex flex-wrap gap-1.5 items-center">
+          <span className="text-xs text-gray-400">פילטרים:</span>
+          {minScoreFilter > 0 && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-green-50 text-green-700 text-xs dark:bg-green-900/20 dark:text-green-400">
+              {minScoreFilter}%+ התאמה
+              <button onClick={() => { setMinScoreFilter(0); setPage(1) }} className="hover:text-red-500"><X size={10} /></button>
+            </span>
+          )}
+          {filters.source && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-blue-50 text-blue-700 text-xs dark:bg-blue-900/20 dark:text-blue-400">
+              {SOURCE_DISPLAY[filters.source]?.label || filters.source}
+              <button onClick={() => { setFilters(prev => ({ ...prev, source: undefined })); setPage(1) }} className="hover:text-red-500"><X size={10} /></button>
+            </span>
+          )}
+          {filters.locationType && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-purple-50 text-purple-700 text-xs dark:bg-purple-900/20 dark:text-purple-400">
+              {filters.locationType}
+              <button onClick={() => { setFilters(prev => ({ ...prev, locationType: undefined })); setPage(1) }} className="hover:text-red-500"><X size={10} /></button>
+            </span>
+          )}
+          {filters.experienceLevel && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-50 text-amber-700 text-xs dark:bg-amber-900/20 dark:text-amber-400">
+              {filters.experienceLevel}
+              <button onClick={() => { setFilters(prev => ({ ...prev, experienceLevel: undefined })); setPage(1) }} className="hover:text-red-500"><X size={10} /></button>
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Results count */}
       <div className="text-sm text-gray-500 dark:text-gray-400">
         {meta.total > 0
           ? `${meta.total} משרות נמצאו`
           : 'לא נמצאו משרות'}
+        {minScoreFilter > 0 && meta.total > 0 && (
+          <span className="text-green-600 dark:text-green-400 mr-2">({minScoreFilter}%+ התאמה)</span>
+        )}
       </div>
 
       {/* Jobs List */}

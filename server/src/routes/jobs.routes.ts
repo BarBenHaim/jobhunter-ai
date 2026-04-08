@@ -26,6 +26,8 @@ router.get(
     query('experienceLevel').optional().isString(),
     query('location').optional().isString(),
     query('datePosted').optional().isString(),
+    query('searchSessionId').optional().isString(),
+    query('minSmartScore').optional().isFloat({ min: 0, max: 100 }),
     query('page').optional().isInt({ min: 1 }),
     query('limit').optional().isInt({ min: 1, max: 100 }),
     query('sort').optional().isString(),
@@ -69,6 +71,8 @@ router.get(
       locationType: req.query.locationType as string | undefined,
       experienceLevel: req.query.experienceLevel as string | undefined,
       location: req.query.location as string | undefined,
+      searchSessionId: req.query.searchSessionId as string | undefined,
+      minSmartScore: req.query.minSmartScore ? parseFloat(req.query.minSmartScore as string) : undefined,
     } as any;
 
     const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 20;

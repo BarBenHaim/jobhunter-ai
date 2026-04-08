@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -18,8 +18,14 @@ import {
   ChevronDown,
   ChevronUp,
   AlertCircle,
+  Settings2,
+  Plus,
+  X,
+  MapPin,
+  Filter,
+  Sparkles,
 } from 'lucide-react'
-import { scrapeApi } from '@/services/scrape.api'
+import { scrapeApi, SearchConfig } from '@/services/scrape.api'
 import { jobsApi } from '@/services/jobs.api'
 import { profileApi } from '@/services/profile.api'
 import { costsApi, CostData, CostHistory } from '@/services/costs.api'
@@ -119,11 +125,48 @@ const HistoryItem = ({ type, cost, time, detail }: {
 )
 
 // ─── Main Dashboard ──────────────────────────────────────
+/** Available scraping sources */
+const ALL_SOURCES = [
+  { id: 'INDEED', name: 'Indeed', icon: '🔍' },
+  { id: 'DRUSHIM', name: 'Drushim', icon: '🇮🇱' },
+  { id: 'ALLJOBS', name: 'AllJobs', icon: '📋' },
+  { id: 'GOOGLE_JOBS', name: 'Google Jobs', icon: '🌐' },
+  { id: 'COMPANY_CAREER_PAGE', name: 'Career Pages', icon: '🏢' },
+  { id: 'TOP_COMPANIES', name: 'Top Companies', icon: '⭐' },
+]
+
+const EXPERIENCE_LEVELS = [
+  { value: '', label: 'הכל' },
+  { value: 'ENTRY', label: 'Entry Level' },
+  { value: 'JUNIOR', label: 'Junior' },
+  { value: 'MID', label: 'Mid Level' },
+  { value: 'SENIOR', label: 'Senior' },
+  { value: 'LEAD', label: 'Lead / Staff' },
+]
+
+const MIN_SCORE_OPTIONS = [
+  { value: 0, label: 'ללא מינימום' },
+  { value: 40, label: '40% ומעלה' },
+  { value: 50, label: '50% ומעלה' },
+  { value: 60, label: '60% ומעלה' },
+  { value: 70, label: '70% ומעלה' },
+  { value: 80, label: '80% ומעלה' },
+]
+
 const Dashboard = () => {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [scrapeMessage, setScrapeMessage] = useState<string | null>(null)
   const [costDetailOpen, setCostDetailOpen] = useState(false)
+  const [searchConfigOpen, setSearchConfigOpen] = useState(false)
+
+  // Search configuration state
+  const [enabledSources, setEnabledSources] = useState<string[]>([]) // empty = all
+  const [minScore, setMinScore] = useState<number>(0)
+  const [searchLocation, setSearchLocation] = useState<string>('')
+  const [customKeywords, setCustomKeywords] = useState<string[]>([])
+  const [keywordInput, setKeywordInput] = useState('')
+  const [experienceLevel, setExperienceLevel] = useState('')
 
   // ─── Queries ─────────────────────────────────────────
   const { data: statusData, isLoading: statusLoading } = useQuery({
@@ -171,7 +214,7 @@ const Dashboard = () => {
   })
 
   // ─── Scrape mutation ─────────────────────────────────
-  const scrapeKeywords = useMemo(() => {
+  const defaultKeywords = useMemo(() => {
     const defaults = ['React', 'Full Stack', 'Node.js', 'TypeScript', 'Frontend', 'Backend', 'מפתח תוכנה', 'פיתוח']
     const prefs = (profile as any)?.preferences
     if (prefs?.targetRoles?.length > 0) {
@@ -180,29 +223,69 @@ const Dashboard = () => {
     return defaults
   }, [profile])
 
-  const scrapeLocation = useMemo(() => {
+  const defaultLocation = useMemo(() => {
     const prefs = (profile as any)?.preferences
     return prefs?.preferredLocations?.[0] || 'Israel'
   }, [profile])
 
+  // Build the search config from UI state
+  const buildSearchConfig = useCallback((): SearchConfig => {
+    const config: SearchConfig = {}
+    if (enabledSources.length > 0) config.sources = enabledSources
+    if (minScore > 0) config.minScore = minScore
+    if (searchLocation.trim()) config.location = searchLocation.trim()
+    else config.location = defaultLocation
+    if (customKeywords.length > 0) config.keywords = customKeywords
+    if (experienceLevel) config.experienceLevel = experienceLevel
+    return config
+  }, [enabledSources, minScore, searchLocation, customKeywords, experienceLevel, defaultLocation])
+
+  const [lastSearchResult, setLastSearchResult] = useState<{ sessionId: string; count: number } | null>(null)
+
   const scrapeMutation = useMutation({
-    mutationFn: () =>
-      scrapeApi.smartTriggerScrape(scrapeLocation).catch(() =>
-        scrapeApi.triggerScrape(scrapeKeywords, scrapeLocation)
-      ),
+    mutationFn: () => {
+      const config = buildSearchConfig()
+      return scrapeApi.smartTriggerScrape(config).catch(() =>
+        scrapeApi.triggerScrape(customKeywords.length > 0 ? customKeywords : defaultKeywords, config.location || defaultLocation)
+      )
+    },
     onSuccess: (res) => {
-      setScrapeMessage(`נמצאו ${res.data.totalJobsCreated} משרות חדשות!`)
+      const sessionId = res.data.searchSessionId
+      const count = res.data.totalJobsCreated
+      setLastSearchResult(sessionId ? { sessionId, count } : null)
+      setScrapeMessage(`נמצאו ${count} משרות חדשות!`)
       queryClient.invalidateQueries({ queryKey: ['scrape-status'] })
       queryClient.invalidateQueries({ queryKey: ['job-stats'] })
       queryClient.invalidateQueries({ queryKey: ['jobs'] })
       queryClient.invalidateQueries({ queryKey: ['costs-today'] })
-      setTimeout(() => setScrapeMessage(null), 5000)
+      queryClient.invalidateQueries({ queryKey: ['search-history'] })
+      setTimeout(() => setScrapeMessage(null), 8000)
     },
     onError: (err: any) => {
       setScrapeMessage(`שגיאה: ${err?.response?.data?.error?.message || err.message}`)
       setTimeout(() => setScrapeMessage(null), 5000)
     },
   })
+
+  const addKeyword = () => {
+    const kw = keywordInput.trim()
+    if (kw && !customKeywords.includes(kw)) {
+      setCustomKeywords(prev => [...prev, kw])
+    }
+    setKeywordInput('')
+  }
+
+  const removeKeyword = (kw: string) => {
+    setCustomKeywords(prev => prev.filter(k => k !== kw))
+  }
+
+  const toggleSource = (sourceId: string) => {
+    setEnabledSources(prev =>
+      prev.includes(sourceId)
+        ? prev.filter(s => s !== sourceId)
+        : [...prev, sourceId]
+    )
+  }
 
   // ─── Derived data ────────────────────────────────────
   const totalJobs = statusData?.totalJobsInDB || 0
@@ -251,7 +334,7 @@ const Dashboard = () => {
           <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">עדכנו פרופיל → חפשו משרות → צרו CV מותאם</p>
           <div className="flex gap-2 flex-wrap">
             <button onClick={() => navigate('/profile')} className="px-4 py-2 rounded-xl bg-white dark:bg-gray-800 text-sm font-medium text-gray-900 dark:text-white shadow-sm hover:shadow transition-all">עדכן פרופיל</button>
-            <button onClick={() => scrapeMutation.mutate()} disabled={scrapeMutation.isPending} className="px-4 py-2 rounded-xl bg-primary-600 text-sm font-medium text-white shadow-sm hover:bg-primary-500 transition-all disabled:opacity-60 flex items-center gap-1.5">
+            <button onClick={() => { setSearchConfigOpen(true); scrapeMutation.mutate() }} disabled={scrapeMutation.isPending} className="px-4 py-2 rounded-xl bg-primary-600 text-sm font-medium text-white shadow-sm hover:bg-primary-500 transition-all disabled:opacity-60 flex items-center gap-1.5">
               {scrapeMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
               חפש משרות
             </button>
@@ -260,29 +343,200 @@ const Dashboard = () => {
         </div>
       )}
 
-      {/* Scrape message */}
+      {/* Scrape message with "view results" link */}
       {scrapeMessage && (
-        <div className={`rounded-xl px-4 py-3 text-sm font-medium ${
+        <div className={`rounded-xl px-4 py-3 text-sm font-medium flex items-center justify-between ${
           scrapeMessage.startsWith('שגיאה')
             ? 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400'
             : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400'
-        }`}>{scrapeMessage}</div>
+        }`}>
+          <span>{scrapeMessage}</span>
+          {lastSearchResult && !scrapeMessage.startsWith('שגיאה') && (
+            <button
+              onClick={() => navigate(`/jobs?tab=lastSearch&sid=${lastSearchResult.sessionId}`)}
+              className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-500 transition-colors flex items-center gap-1"
+            >
+              <Eye size={12} />
+              צפה בתוצאות
+            </button>
+          )}
+        </div>
       )}
 
-      {/* Quick Actions (2x2) */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <button
-          onClick={() => scrapeMutation.mutate()}
-          disabled={scrapeMutation.isPending}
-          className="group p-4 rounded-2xl bg-white dark:bg-gray-800/80 border border-gray-100 dark:border-gray-700/50 hover:border-blue-300 dark:hover:border-blue-600 hover:shadow-md transition-all text-right disabled:opacity-60"
-        >
-          <div className="w-9 h-9 rounded-xl bg-blue-500 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-            {scrapeMutation.isPending ? <Loader2 size={16} className="text-white animate-spin" /> : <Search size={16} className="text-white" />}
+      {/* Search Panel + Quick Actions */}
+      <div className="rounded-2xl bg-white dark:bg-gray-800/80 border border-gray-100 dark:border-gray-700/50 overflow-hidden">
+        {/* Search header */}
+        <div className="p-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-primary-600 flex items-center justify-center">
+              <Search size={18} className="text-white" />
+            </div>
+            <div className="text-right">
+              <h3 className="text-sm font-bold text-gray-900 dark:text-white">חיפוש משרות חכם</h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {enabledSources.length > 0 ? `${enabledSources.length} מקורות` : 'כל המקורות'}
+                {minScore > 0 ? ` • מינימום ${minScore}%` : ''}
+                {searchLocation ? ` • ${searchLocation}` : ''}
+                {customKeywords.length > 0 ? ` • ${customKeywords.length} מילות מפתח` : ''}
+              </p>
+            </div>
           </div>
-          <p className="text-sm font-semibold text-gray-900 dark:text-white">חפש משרות</p>
-          <p className="text-xs text-gray-400 mt-0.5">חיפוש חכם מכל המקורות</p>
-        </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setSearchConfigOpen(!searchConfigOpen)}
+              className={`p-2.5 rounded-xl border text-sm transition-all ${
+                searchConfigOpen
+                  ? 'border-primary-400 bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-400 dark:border-primary-600'
+                  : 'border-gray-200 text-gray-500 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700/30'
+              }`}
+              title="הגדרות חיפוש"
+            >
+              <Settings2 size={18} />
+            </button>
+            <button
+              onClick={() => scrapeMutation.mutate()}
+              disabled={scrapeMutation.isPending}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-500 to-primary-600 text-white text-sm font-semibold hover:shadow-lg hover:shadow-blue-500/25 transition-all disabled:opacity-60"
+            >
+              {scrapeMutation.isPending ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+              חפש עכשיו
+            </button>
+          </div>
+        </div>
 
+        {/* Expandable search config */}
+        {searchConfigOpen && (
+          <div className="border-t border-gray-100 dark:border-gray-700/50 p-4 space-y-4 bg-gray-50/50 dark:bg-gray-900/30">
+            {/* Sources selection */}
+            <div>
+              <label className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 block">מקורות חיפוש</label>
+              <div className="flex flex-wrap gap-2">
+                {ALL_SOURCES.map((source) => {
+                  const isActive = enabledSources.length === 0 || enabledSources.includes(source.id)
+                  return (
+                    <button
+                      key={source.id}
+                      onClick={() => toggleSource(source.id)}
+                      className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium transition-all ${
+                        isActive
+                          ? 'bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-700'
+                          : 'bg-white text-gray-400 border border-gray-200 dark:bg-gray-800 dark:text-gray-500 dark:border-gray-700 opacity-60'
+                      }`}
+                    >
+                      <span>{source.icon}</span>
+                      {source.name}
+                    </button>
+                  )
+                })}
+                {enabledSources.length > 0 && (
+                  <button
+                    onClick={() => setEnabledSources([])}
+                    className="px-3 py-2 rounded-xl text-xs text-gray-500 hover:text-red-500 font-medium transition-colors"
+                  >
+                    בחר הכל
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Min score + Location + Experience in a row */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1.5 block">ציון התאמה מינימלי</label>
+                <select
+                  value={minScore}
+                  onChange={(e) => setMinScore(Number(e.target.value))}
+                  className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
+                >
+                  {MIN_SCORE_OPTIONS.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1.5 block">מיקום</label>
+                <div className="relative">
+                  <MapPin size={14} className="absolute right-3 top-3 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder={defaultLocation || 'Israel'}
+                    value={searchLocation}
+                    onChange={(e) => setSearchLocation(e.target.value)}
+                    className="w-full pr-9 pl-3 py-2.5 rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1.5 block">רמת ניסיון</label>
+                <select
+                  value={experienceLevel}
+                  onChange={(e) => setExperienceLevel(e.target.value)}
+                  className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
+                >
+                  {EXPERIENCE_LEVELS.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Custom keywords */}
+            <div>
+              <label className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1.5 block">
+                מילות מפתח מותאמות אישית
+                <span className="font-normal normal-case text-gray-400 mr-1">(ריק = אוטומטי מהפרופיל)</span>
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="הוסף מילת מפתח..."
+                  value={keywordInput}
+                  onChange={(e) => setKeywordInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addKeyword() } }}
+                  className="flex-1 px-3 py-2.5 rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-white text-sm"
+                  dir="ltr"
+                />
+                <button
+                  onClick={addKeyword}
+                  disabled={!keywordInput.trim()}
+                  className="px-3 py-2.5 rounded-xl bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors disabled:opacity-40"
+                >
+                  <Plus size={16} />
+                </button>
+              </div>
+              {customKeywords.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {customKeywords.map((kw) => (
+                    <span key={kw} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-primary-50 text-primary-700 text-xs font-medium dark:bg-primary-900/20 dark:text-primary-400">
+                      {kw}
+                      <button onClick={() => removeKeyword(kw)} className="hover:text-red-500 transition-colors">
+                        <X size={12} />
+                      </button>
+                    </span>
+                  ))}
+                  <button
+                    onClick={() => setCustomKeywords([])}
+                    className="text-xs text-gray-400 hover:text-red-500 px-2 py-1 transition-colors"
+                  >
+                    נקה הכל
+                  </button>
+                </div>
+              )}
+              {customKeywords.length === 0 && (
+                <p className="text-xs text-gray-400 mt-1.5">
+                  מילות מפתח מהפרופיל: {defaultKeywords.slice(0, 5).join(', ')}
+                  {defaultKeywords.length > 5 ? ` (+${defaultKeywords.length - 5})` : ''}
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Quick Actions (3 columns — search is now above) */}
+      <div className="grid grid-cols-3 gap-3">
         <button
           onClick={() => navigate('/jobs')}
           className="group p-4 rounded-2xl bg-white dark:bg-gray-800/80 border border-gray-100 dark:border-gray-700/50 hover:border-emerald-300 dark:hover:border-emerald-600 hover:shadow-md transition-all text-right"

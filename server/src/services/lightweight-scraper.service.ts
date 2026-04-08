@@ -640,8 +640,8 @@ class LightweightScraperService {
   /**
    * Main scraper function that runs all scrapers
    */
-  async scrapeAll(keywords: string[] = [], location: string = 'Israel'): Promise<ScrapeResult[]> {
-    logger.info('Starting scraping of all sources', { keywords, location });
+  async scrapeAll(keywords: string[] = [], location: string = 'Israel', enabledSources?: string[]): Promise<ScrapeResult[]> {
+    logger.info('Starting scraping of all sources', { keywords, location, enabledSources });
 
     const results: ScrapeResult[] = [];
 
@@ -649,32 +649,49 @@ class LightweightScraperService {
     const searchTerms = keywords.length > 0 ? keywords : ['מפתח תוכנה', 'software engineer'];
     const searchLocation = location || 'Israel';
 
-    // Run all scrapers in parallel
+    // Helper: check if a source is enabled
+    const isEnabled = (source: string) => !enabledSources || enabledSources.length === 0 || enabledSources.includes(source);
+
+    const emptyResult: ScrapedJob[] = [];
+
+    // Run all scrapers in parallel (skip disabled sources)
     const [indeedJobs, drushimJobs, allJobsJobs, googleJobs, careerPageJobs, topCompanyJobs] = await Promise.all([
-      this.scrapeIndeedIsrael(searchTerms, searchLocation).catch((err) => {
-        logger.error('Indeed scraper failed', err);
-        return [];
-      }),
-      this.scrapeDrushim(searchTerms, searchLocation).catch((err) => {
-        logger.error('Drushim scraper failed', err);
-        return [];
-      }),
-      this.scrapeAllJobs(searchTerms, searchLocation).catch((err) => {
-        logger.error('AllJobs scraper failed', err);
-        return [];
-      }),
-      this.scrapeGoogleJobs(searchTerms, searchLocation).catch((err) => {
-        logger.error('Google Jobs scraper failed', err);
-        return [];
-      }),
-      this.scrapeCareerPages(searchTerms, searchLocation).catch((err) => {
-        logger.error('Career pages scraper failed', err);
-        return [];
-      }),
-      this.scrapeTopCompanies(searchTerms, searchLocation).catch((err) => {
-        logger.error('Top Companies scraper failed', err);
-        return [];
-      }),
+      isEnabled('INDEED')
+        ? this.scrapeIndeedIsrael(searchTerms, searchLocation).catch((err) => {
+            logger.error('Indeed scraper failed', err);
+            return emptyResult;
+          })
+        : emptyResult,
+      isEnabled('DRUSHIM')
+        ? this.scrapeDrushim(searchTerms, searchLocation).catch((err) => {
+            logger.error('Drushim scraper failed', err);
+            return emptyResult;
+          })
+        : emptyResult,
+      isEnabled('ALLJOBS')
+        ? this.scrapeAllJobs(searchTerms, searchLocation).catch((err) => {
+            logger.error('AllJobs scraper failed', err);
+            return emptyResult;
+          })
+        : emptyResult,
+      isEnabled('GOOGLE_JOBS')
+        ? this.scrapeGoogleJobs(searchTerms, searchLocation).catch((err) => {
+            logger.error('Google Jobs scraper failed', err);
+            return emptyResult;
+          })
+        : emptyResult,
+      isEnabled('COMPANY_CAREER_PAGE')
+        ? this.scrapeCareerPages(searchTerms, searchLocation).catch((err) => {
+            logger.error('Career pages scraper failed', err);
+            return emptyResult;
+          })
+        : emptyResult,
+      isEnabled('TOP_COMPANIES')
+        ? this.scrapeTopCompanies(searchTerms, searchLocation).catch((err) => {
+            logger.error('Top Companies scraper failed', err);
+            return emptyResult;
+          })
+        : emptyResult,
     ]);
 
     // Push results
