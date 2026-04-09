@@ -55,12 +55,45 @@ export interface ProfileAnalysis {
 }
 
 // ============================================================
+// KEYWORD CACHE — avoid re-generating if profile hasn't changed
+// ============================================================
+
+interface CachedKeywords {
+  keywords: SmartKeywords;
+  profileHash: string;
+  timestamp: number;
+}
+
+const keywordCache = new Map<string, CachedKeywords>();
+const KEYWORD_CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+function computeProfileHash(structuredProfile: any, preferences: any, searchConfig?: any): string {
+  // Simple hash: stringify the key parts that affect keyword generation
+  const data = JSON.stringify({
+    skills: structuredProfile?.skills || [],
+    experiences: (structuredProfile?.experiences || []).map((e: any) => e.title),
+    targetRoles: preferences?.targetRoles || [],
+    experienceLevel: searchConfig?.experienceLevel || preferences?.experienceLevel || '',
+    customKeywords: searchConfig?.keywords || [],
+  });
+  // Simple hash function
+  let hash = 0;
+  for (let i = 0; i < data.length; i++) {
+    const chr = data.charCodeAt(i);
+    hash = ((hash << 5) - hash) + chr;
+    hash |= 0;
+  }
+  return hash.toString(36);
+}
+
+// ============================================================
 // AI KEYWORD EXPANSION
 // ============================================================
 
 /**
  * Use AI to deeply analyze the user's profile and generate smart,
  * expanded search keywords — thinking like a senior recruiter.
+ * Results are cached for 7 days if profile hasn't changed.
  */
 export async function generateSmartKeywords(
   structuredProfile: any,
@@ -69,7 +102,17 @@ export async function generateSmartKeywords(
   searchConfig?: { experienceLevel?: string; keywords?: string[] }
 ): Promise<SmartKeywords> {
   try {
-    logger.info('Generating smart keywords from full profile');
+    // Check cache first — avoid burning AI tokens if profile hasn't changed
+    const cacheKey = 'user_keywords'; // Single user system for now
+    const profileHash = computeProfileHash(structuredProfile, preferences, searchConfig);
+    const cached = keywordCache.get(cacheKey);
+
+    if (cached && cached.profileHash === profileHash && (Date.now() - cached.timestamp) < KEYWORD_CACHE_TTL) {
+      logger.info('Using cached smart keywords (profile unchanged)', { age: Math.round((Date.now() - cached.timestamp) / 60000) + 'min' });
+      return cached.keywords;
+    }
+
+    logger.info('Generating smart keywords from full profile (cache miss or expired)');
 
     const profileText = rawKnowledge?.content || '';
     const targetRoles = preferences?.targetRoles || [];
@@ -161,6 +204,13 @@ Remember:
       primary: keywords.primary?.length,
       adjacent: keywords.adjacent?.length,
       combined: keywords.combined?.length,
+    });
+
+    // Cache the results
+    keywordCache.set(cacheKey, {
+      keywords,
+      profileHash,
+      timestamp: Date.now(),
     });
 
     return keywords;

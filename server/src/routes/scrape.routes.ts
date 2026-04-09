@@ -187,14 +187,23 @@ router.post('/smart-trigger', authMiddleware, async (req: AuthRequest, res: Resp
       ? searchConfig.keywords
       : keywordsToUse
 
-    // IMPORTANT: Each scrapeAll call costs 2 SerpAPI credits (Indeed + Google Jobs).
-    // To avoid burning through credits, we batch keywords into a few combined queries
-    // instead of running 12 separate scrapeAll calls (which would cost 24 credits!).
-    const allKeywords = finalKeywords.slice(0, 15)
+    // OPTIMIZATION: Deduplicate keywords before batching
+    // Smart keywords often overlap (e.g. "React Developer" and "React" are redundant when joined)
+    const rawKeywords = finalKeywords.slice(0, 15)
+    const seenLower = new Set<string>()
+    const allKeywords = rawKeywords.filter(kw => {
+      const lower = kw.toLowerCase().trim()
+      if (!lower || seenLower.has(lower)) return false
+      seenLower.add(lower)
+      return true
+    })
+
     const location = searchConfig.location || preferences?.preferredLocations?.[0] || 'Israel'
 
-    // Group keywords into max 3 batches (= max 6 SerpAPI calls instead of 24+)
-    const BATCH_SIZE = 3
+    // OPTIMIZATION: Reduced from 3 batches to 2 — each batch joins keywords into one query,
+    // so fewer batches = fewer SerpAPI calls. With career pages now using 1 call instead of 3,
+    // each batch costs 2 SerpAPI calls (Google Jobs + Career Pages).
+    const BATCH_SIZE = 2
     const keywordBatches: string[][] = []
     for (let i = 0; i < allKeywords.length; i += Math.ceil(allKeywords.length / BATCH_SIZE)) {
       const batch = allKeywords.slice(i, i + Math.ceil(allKeywords.length / BATCH_SIZE))
@@ -203,6 +212,7 @@ router.post('/smart-trigger', authMiddleware, async (req: AuthRequest, res: Resp
 
     logger.info('Smart scraping with batched keywords', {
       totalKeywords: allKeywords.length,
+      deduplicated: rawKeywords.length - allKeywords.length,
       batches: keywordBatches.length,
       estimatedSerpApiCalls: keywordBatches.length * 2,
       location,

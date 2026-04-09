@@ -495,94 +495,89 @@ class LightweightScraperService {
       const jobs: ScrapedJob[] = [];
       const searchTerms = keywords.join(' ');
 
-      const searchQueries = [
-        `${searchTerms} Israel site:boards.greenhouse.io`,
-        `${searchTerms} Israel site:jobs.lever.co`,
-        `${searchTerms} Israel site:jobs.ashbyhq.com`,
-      ];
+      // OPTIMIZATION: Single unified query instead of 3 separate SerpAPI calls
+      // Saves 66% of SerpAPI credits on career page scraping
+      const unifiedQuery = `${searchTerms} Israel (site:boards.greenhouse.io OR site:jobs.lever.co OR site:jobs.ashbyhq.com)`;
 
       const serpApiKey = process.env.SERPAPI_KEY;
 
-      for (const query of searchQueries) {
-        try {
-          let results: { title: string; link: string; snippet: string }[] = [];
+      try {
+        let results: { title: string; link: string; snippet: string }[] = [];
 
-          if (serpApiKey) {
-            // Use SerpAPI (reliable, no CAPTCHA)
-            const response = await this.axiosInstance.get('https://serpapi.com/search', {
-              params: {
-                engine: 'google',
-                q: query,
-                api_key: serpApiKey,
-                num: 15,
-              },
-            });
+        if (serpApiKey) {
+          const response = await this.axiosInstance.get('https://serpapi.com/search', {
+            params: {
+              engine: 'google',
+              q: unifiedQuery,
+              api_key: serpApiKey,
+              num: 30, // Request more results since we're combining 3 queries into 1
+            },
+          });
 
-            // Record SerpAPI cost
-            costTracker.recordSerpApiCall();
+          // Record SerpAPI cost — now just 1 call instead of 3!
+          costTracker.recordSerpApiCall();
 
-            results = (response.data.organic_results || []).map((r: any) => ({
-              title: r.title || '',
-              link: r.link || '',
-              snippet: r.snippet || '',
-            }));
-          } else {
-            // Fallback: raw Google scraping (may get blocked)
-            const url = `https://www.google.com/search?q=${encodeURIComponent(query)}&num=10`;
-            const response = await this.axiosInstance.get(url, {
-              headers: {
-                'User-Agent': this.USER_AGENT,
-                'Accept': 'text/html',
-                'Accept-Language': 'en-US,en;q=0.9',
-              },
-            });
+          results = (response.data.organic_results || []).map((r: any) => ({
+            title: r.title || '',
+            link: r.link || '',
+            snippet: r.snippet || '',
+          }));
+        } else {
+          // Fallback: raw Google scraping (may get blocked)
+          const url = `https://www.google.com/search?q=${encodeURIComponent(unifiedQuery)}&num=20`;
+          const response = await this.axiosInstance.get(url, {
+            headers: {
+              'User-Agent': this.USER_AGENT,
+              'Accept': 'text/html',
+              'Accept-Language': 'en-US,en;q=0.9',
+            },
+          });
 
-            const $ = cheerio.load(response.data);
-            $('div.g, div[data-sokoban-container]').each((_: number, elem: any) => {
-              const $result = $(elem);
-              const link = $result.find('a').first().attr('href') || '';
-              const title = $result.find('h3').first().text().trim();
-              const snippet = $result.find('.VwiC3b, [data-sncf]').first().text().trim();
-              if (title && link) results.push({ title, link, snippet });
-            });
-          }
-
-          for (const result of results) {
-            try {
-              const sourceUrl = result.link.startsWith('/url?q=')
-                ? decodeURIComponent(result.link.replace('/url?q=', '').split('&')[0])
-                : result.link;
-
-              if (!sourceUrl.includes('greenhouse.io') && !sourceUrl.includes('lever.co') && !sourceUrl.includes('ashbyhq.com')) continue;
-              if (!result.title) continue;
-
-              let company = 'Unknown';
-              const ghMatch = sourceUrl.match(/boards\.greenhouse\.io\/([^\/]+)/);
-              const leverMatch = sourceUrl.match(/jobs\.lever\.co\/([^\/]+)/);
-              const ashbyMatch = sourceUrl.match(/jobs\.ashbyhq\.com\/([^\/]+)/);
-
-              if (ghMatch) company = ghMatch[1].replace(/[-_]/g, ' ');
-              else if (leverMatch) company = leverMatch[1].replace(/[-_]/g, ' ');
-              else if (ashbyMatch) company = ashbyMatch[1].replace(/[-_]/g, ' ');
-
-              company = company.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-
-              jobs.push({
-                title: result.title.replace(/ at .*$/, '').replace(/ - .*$/, '').trim(),
-                company,
-                location: location || 'Israel',
-                locationType: 'hybrid',
-                description: (result.snippet || '').substring(0, 300),
-                sourceUrl,
-                source: 'COMPANY_CAREER_PAGE',
-              });
-            } catch (_err) {
-              // skip
-            }
-          }
-        } catch (err) {
-          logger.warn('Career page search failed for query', { query, error: err });
+          const $ = cheerio.load(response.data);
+          $('div.g, div[data-sokoban-container]').each((_: number, elem: any) => {
+            const $result = $(elem);
+            const link = $result.find('a').first().attr('href') || '';
+            const title = $result.find('h3').first().text().trim();
+            const snippet = $result.find('.VwiC3b, [data-sncf]').first().text().trim();
+            if (title && link) results.push({ title, link, snippet });
+          });
         }
+
+        for (const result of results) {
+          try {
+            const sourceUrl = result.link.startsWith('/url?q=')
+              ? decodeURIComponent(result.link.replace('/url?q=', '').split('&')[0])
+              : result.link;
+
+            if (!sourceUrl.includes('greenhouse.io') && !sourceUrl.includes('lever.co') && !sourceUrl.includes('ashbyhq.com')) continue;
+            if (!result.title) continue;
+
+            let company = 'Unknown';
+            const ghMatch = sourceUrl.match(/boards\.greenhouse\.io\/([^\/]+)/);
+            const leverMatch = sourceUrl.match(/jobs\.lever\.co\/([^\/]+)/);
+            const ashbyMatch = sourceUrl.match(/jobs\.ashbyhq\.com\/([^\/]+)/);
+
+            if (ghMatch) company = ghMatch[1].replace(/[-_]/g, ' ');
+            else if (leverMatch) company = leverMatch[1].replace(/[-_]/g, ' ');
+            else if (ashbyMatch) company = ashbyMatch[1].replace(/[-_]/g, ' ');
+
+            company = company.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+
+            jobs.push({
+              title: result.title.replace(/ at .*$/, '').replace(/ - .*$/, '').trim(),
+              company,
+              location: location || 'Israel',
+              locationType: 'hybrid',
+              description: (result.snippet || '').substring(0, 300),
+              sourceUrl,
+              source: 'COMPANY_CAREER_PAGE',
+            });
+          } catch (_err) {
+            // skip
+          }
+        }
+      } catch (err) {
+        logger.warn('Career page search failed', { error: err });
       }
 
       // Deduplicate by URL
