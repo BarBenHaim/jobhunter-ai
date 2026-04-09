@@ -103,7 +103,12 @@ const IRRELEVANT_TITLE_KEYWORDS = [
 /** Check if a job title looks tech-relevant. Returns false for obvious non-tech jobs. */
 function isTechRelevant(title: string): boolean {
   if (!title) return false
+  // Normalize: remove slashes, extra spaces, and gender markers common in Hebrew job posts
   const lower = title.toLowerCase()
+    .replace(/\s*\/\s*[תה]\s*/g, ' ')   // "מנהל /ת" → "מנהל "
+    .replace(/\s*\/\s*(ית|ה)\s*/g, ' ')  // "דרוש/ה" → "דרוש "
+    .replace(/\s+/g, ' ')                 // normalize multiple spaces
+    .trim()
   // If title contains any irrelevant keyword, reject it
   for (const kw of IRRELEVANT_TITLE_KEYWORDS) {
     if (lower.includes(kw.toLowerCase())) return false

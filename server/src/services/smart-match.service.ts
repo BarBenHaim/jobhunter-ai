@@ -315,8 +315,25 @@ export function analyzeProfileForScoring(
     if (parsed > experienceYears) experienceYears = parsed;
   }
 
+  // Check if user explicitly selected student/junior roles — this overrides experience calculation
+  const targetRolesRaw = preferences?.targetRoles || [];
+  const isExplicitlyStudent = targetRolesRaw.some((r: string) => {
+    const lower = r.toLowerCase();
+    return lower.includes('student') || lower.includes('סטודנט') || lower.includes('intern') || lower.includes('התמחות');
+  });
+  const isExplicitlyJunior = isExplicitlyStudent || targetRolesRaw.some((r: string) => {
+    const lower = r.toLowerCase();
+    return lower.includes('junior') || lower.includes('ג\'וניור') || lower.includes('entry');
+  });
+
   let seniorityLevel: ProfileAnalysis['seniorityLevel'] = 'MID';
-  if (experienceYears <= 2) seniorityLevel = 'JUNIOR';
+  if (isExplicitlyStudent) {
+    seniorityLevel = 'JUNIOR';
+    experienceYears = Math.min(experienceYears, 1); // Student — cap experience at 1 year
+  } else if (isExplicitlyJunior) {
+    seniorityLevel = 'JUNIOR';
+    experienceYears = Math.min(experienceYears, 2); // Junior — cap experience at 2 years
+  } else if (experienceYears <= 2) seniorityLevel = 'JUNIOR';
   else if (experienceYears <= 5) seniorityLevel = 'MID';
   else if (experienceYears <= 8) seniorityLevel = 'SENIOR';
   else seniorityLevel = 'LEAD';
@@ -647,10 +664,11 @@ export function scoreJobLocally(
   // STEP 4: EXPERIENCE & SENIORITY FIT (25% of total score)
   // "Am I at the right career level for this role?"
   // ----------------------------------------------------------
-  let experienceScore = 65; // Default: can't detect level → assume neutral-positive (keywords were tailored)
+  let experienceScore = 50; // Default: can't detect level → assume neutral (not optimistic)
 
   const jobExpLevel = (job.experienceLevel || '').toLowerCase();
   const years = profileAnalysis.experienceYears;
+  const candidateIsStudent = profileAnalysis.seniorityLevel === 'JUNIOR' && years <= 1;
 
   // Parse ALL mentions of required years in the job text
   const yearsPatterns = fullText.matchAll(/(\d+)\+?\s*(?:years?|שנ|שנות|שנים)/g);
@@ -698,15 +716,20 @@ export function scoreJobLocally(
   if (detectedJobLevel >= 0) {
     const diff = candidateLevelNum - detectedJobLevel;
     if (diff === 0) {
-      experienceScore = Math.max(experienceScore, 95); // Exact level match
+      experienceScore = Math.max(experienceScore, 90); // Exact level match
     } else if (diff === 1) {
-      experienceScore = Math.max(experienceScore, 70); // Slight step down — overqualified but OK
+      experienceScore = Math.max(experienceScore, 65); // Slight step down — overqualified but OK
     } else if (diff === -1) {
-      experienceScore = Math.max(experienceScore, 60); // One level up — stretch, realistic
+      experienceScore = Math.min(experienceScore, 55); // One level up — stretch, capped
     } else if (diff >= 2) {
-      experienceScore = Math.min(experienceScore, 45); // Way overqualified
+      experienceScore = Math.min(experienceScore, 35); // Way overqualified
     } else if (diff <= -2) {
-      experienceScore = Math.min(experienceScore, 25); // Under-leveled significantly
+      experienceScore = Math.min(experienceScore, 15); // Under-leveled significantly — very poor fit
+    }
+
+    // Extra penalty: student/junior looking at senior+ roles
+    if (candidateIsStudent && detectedJobLevel >= 3) {
+      experienceScore = Math.min(experienceScore, 10); // Student vs Senior = almost no chance
     }
   }
 
