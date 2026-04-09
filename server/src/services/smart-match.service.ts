@@ -65,7 +65,8 @@ export interface ProfileAnalysis {
 export async function generateSmartKeywords(
   structuredProfile: any,
   rawKnowledge: any,
-  preferences: any
+  preferences: any,
+  searchConfig?: { experienceLevel?: string; keywords?: string[] }
 ): Promise<SmartKeywords> {
   try {
     logger.info('Generating smart keywords from full profile');
@@ -73,48 +74,85 @@ export async function generateSmartKeywords(
     const profileText = rawKnowledge?.content || '';
     const targetRoles = preferences?.targetRoles || [];
     const excludeKeywords = preferences?.excludeKeywords || [];
+    const experienceLevel = searchConfig?.experienceLevel || preferences?.experienceLevel || '';
+    const customKeywords = searchConfig?.keywords || [];
+
+    // Determine seniority context for the prompt
+    const isStudent = experienceLevel?.toLowerCase()?.includes('student') ||
+      targetRoles.some((r: string) => r.toLowerCase().includes('student') || r.toLowerCase().includes('סטודנט') || r.toLowerCase().includes('junior') || r.toLowerCase().includes('intern'));
+    const isJunior = isStudent || experienceLevel?.toLowerCase()?.includes('junior') || experienceLevel?.toLowerCase()?.includes('entry');
+
+    let seniorityInstruction = '';
+    if (isStudent) {
+      seniorityInstruction = `
+⚠️ CRITICAL - CANDIDATE IS A STUDENT / ENTRY-LEVEL:
+- This candidate is a STUDENT or looking for ENTRY-LEVEL positions
+- NEVER generate keywords with "Senior", "Lead", "Principal", "Staff", "Architect", "Manager", "Head of", "Director"
+- NEVER suggest roles requiring 3+ years of experience
+- Focus ONLY on: Student positions, Internships, Junior roles, Entry-level, Graduate programs, Working student (סטודנט/ית)
+- Hebrew terms should include: סטודנט, ג'וניור, משרת סטודנט, התמחות, דרוש/ה סטודנט
+- The "combined" keywords MUST include "Student", "Junior", "Intern", "סטודנט", "ג'וניור" in every query
+- Adjacent roles should be OTHER junior/student roles, NOT senior positions`;
+    } else if (isJunior) {
+      seniorityInstruction = `
+⚠️ IMPORTANT - CANDIDATE IS JUNIOR LEVEL:
+- This candidate is looking for JUNIOR / ENTRY-LEVEL positions
+- AVOID keywords with "Senior", "Lead", "Principal", "Staff", "Architect"
+- Focus on: Junior roles, Entry-level positions, 0-2 years experience roles
+- Hebrew terms should include: ג'וניור, מתחיל/ה, ללא ניסיון, משרה ראשונה`;
+    }
 
     const systemPrompt = `You are a SENIOR TECH RECRUITER in Israel with 15 years of experience placing developers in hi-tech companies.
 
 Your job: Given a candidate's full profile, generate the SMARTEST possible search keywords to find jobs they'd be perfect for.
 
+${seniorityInstruction}
+
+ABSOLUTE PRIORITY RULE:
+The candidate has EXPLICITLY selected specific roles they want. These MUST be the foundation of your keywords.
+Do NOT override their choices with what you think is better. Their selected roles should appear FIRST in "primary" and dominate "combined".
+${targetRoles.length > 0 ? `\n🎯 CANDIDATE'S SELECTED ROLES (HIGHEST PRIORITY): ${targetRoles.join(', ')}\nThese roles MUST be the core of all generated keywords. Build everything around these.` : ''}
+
 Think DEEPLY:
-- What roles match their EXACT experience?
-- What ADJACENT roles could they transition to? (e.g., a system admin could do DevOps, a full-stack dev could do frontend lead)
-- What roles value their COMBINATION of skills? (e.g., someone with both coding + product experience is rare)
-- What Hebrew job titles are used on Israeli job boards?
-- What seniority-appropriate terms should we search for?
+- What roles match their EXACT experience AND their stated preferences?
+- What ADJACENT roles could they transition to? (must be SAME seniority level)
+- What Hebrew job titles are used on Israeli job boards for these specific roles?
 - What industry terms capture their niche?
 
 CRITICAL RULES:
-- Generate search terms that will find RELEVANT jobs, not generic ones
+- Generate search terms that match the candidate's ACTUAL level and preferences
+- NEVER suggest roles above the candidate's experience level
 - Include Hebrew terms for Israeli job boards (Drushim, AllJobs)
 - Think about what HR managers would title the job posting
 - Consider both startup and corporate job title conventions
-- Include terms for roles that VALUE their background even if not exact match
+- The "combined" field is what actually gets searched — make it count
 
 Return a JSON object:
 {
-  "primary": ["exact role match terms - 5-8 terms"],
-  "adjacent": ["roles they could transition to based on skills - 5-8 terms"],
+  "primary": ["exact role match terms based on candidate's selected roles - 5-8 terms"],
+  "adjacent": ["roles they could transition to AT THE SAME LEVEL - 5-8 terms"],
   "skills": ["key technical skills to search for - 5-10 terms"],
-  "hebrew": ["Hebrew job titles and keywords - 5-10 terms"],
+  "hebrew": ["Hebrew job titles and keywords matching their level - 5-10 terms"],
   "industry": ["industry/domain specific terms - 3-5 terms"],
-  "seniority": ["level-appropriate terms - 3-5 terms"],
-  "combined": ["top 10-15 combined search queries optimized for job boards, mixing role + tech"]
+  "seniority": ["level-appropriate terms ONLY - 3-5 terms"],
+  "combined": ["top 10-15 combined search queries optimized for job boards, mixing role + tech + correct seniority"]
 }`;
 
     const userPrompt = `CANDIDATE PROFILE:
 
 ${profileText ? `--- Raw Resume/Knowledge ---\n${profileText}\n---\n` : ''}
 ${structuredProfile ? `--- Structured Profile ---\n${JSON.stringify(structuredProfile, null, 2)}\n---\n` : ''}
-${targetRoles.length > 0 ? `\nTarget Roles: ${targetRoles.join(', ')}` : ''}
+${targetRoles.length > 0 ? `\n🎯 CANDIDATE'S SELECTED TARGET ROLES (MUST PRIORITIZE): ${targetRoles.join(', ')}` : ''}
+${experienceLevel ? `\n⚡ EXPERIENCE LEVEL: ${experienceLevel}` : ''}
+${customKeywords.length > 0 ? `\nCustom Keywords to include: ${customKeywords.join(', ')}` : ''}
 ${excludeKeywords.length > 0 ? `\nExclude Keywords: ${excludeKeywords.join(', ')}` : ''}
 
 Based on this candidate's FULL background, generate smart search keywords.
-Remember: Think like a recruiter who deeply understands the Israeli tech market.
-Consider what this person CAN do, not just what they've done.
-Consider adjacent roles, stretch roles, and hidden-gem opportunities.`;
+Remember:
+- RESPECT the candidate's selected roles and experience level above all else
+- Think like a recruiter who deeply understands the Israeli tech market
+- Match keywords to the candidate's ACTUAL level — not aspirational roles
+- The "combined" keywords are what get searched on job boards — they must be precise and level-appropriate`;
 
     const response = await aiClient.callAPI(systemPrompt, userPrompt, 2, 45000);
     const keywords = aiClient.parseJSON<SmartKeywords>(response);

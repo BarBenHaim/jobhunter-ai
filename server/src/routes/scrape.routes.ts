@@ -154,7 +154,8 @@ router.post('/smart-trigger', authMiddleware, async (req: AuthRequest, res: Resp
       smartKeywords = await smartMatchService.generateSmartKeywords(
         structuredProfile,
         rawKnowledge,
-        preferences
+        preferences,
+        { experienceLevel: searchConfig.experienceLevel, keywords: searchConfig.keywords }
       )
       logger.info('Smart keywords generated', {
         combined: smartKeywords.combined?.length,
