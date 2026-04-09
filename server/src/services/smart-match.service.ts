@@ -128,21 +128,37 @@ export async function generateSmartKeywords(
     let seniorityInstruction = '';
     if (isStudent) {
       seniorityInstruction = `
-⚠️ CRITICAL - CANDIDATE IS A STUDENT / ENTRY-LEVEL:
-- This candidate is a STUDENT or looking for ENTRY-LEVEL positions
-- NEVER generate keywords with "Senior", "Lead", "Principal", "Staff", "Architect", "Manager", "Head of", "Director"
-- NEVER suggest roles requiring 3+ years of experience
-- Focus ONLY on: Student positions, Internships, Junior roles, Entry-level, Graduate programs, Working student (סטודנט/ית)
-- Hebrew terms should include: סטודנט, ג'וניור, משרת סטודנט, התמחות, דרוש/ה סטודנט
-- The "combined" keywords MUST include "Student", "Junior", "Intern", "סטודנט", "ג'וניור" in every query
-- Adjacent roles should be OTHER junior/student roles, NOT senior positions`;
+⛔ ABSOLUTE RULE - THIS CANDIDATE IS A STUDENT / ENTRY-LEVEL:
+
+FORBIDDEN WORDS — NEVER include these in ANY keyword:
+Senior, Lead, Principal, Staff, Architect, Manager, Head, Director, VP, CTO, Team Lead, Tech Lead, סניור, בכיר, מוביל, ראש צוות, מנהל
+
+REQUIRED WORDS — Every "combined" query MUST include at least one of:
+Student, Junior, Intern, Entry, Graduate, סטודנט, ג'וניור, התמחות, משרת סטודנט
+
+EXAMPLES of GOOD combined queries:
+- "Junior Software Developer React"
+- "Student Developer Position Israel"
+- "סטודנט פיתוח תוכנה"
+- "Intern Full Stack Developer"
+- "Entry Level Developer JavaScript"
+- "Junior Backend Developer Node.js"
+- "משרת סטודנט פיתוח"
+- "Graduate Software Engineer"
+
+EXAMPLES of BAD combined queries (NEVER generate these):
+- "Full Stack Developer React Next.js" (missing student/junior qualifier!)
+- "Software Engineer TypeScript" (too generic, will return senior roles!)
+- "Technical Product Manager" (way above student level!)
+
+The ENTIRE search should be calibrated for someone with 0-1 years of experience.`;
     } else if (isJunior) {
       seniorityInstruction = `
-⚠️ IMPORTANT - CANDIDATE IS JUNIOR LEVEL:
-- This candidate is looking for JUNIOR / ENTRY-LEVEL positions
-- AVOID keywords with "Senior", "Lead", "Principal", "Staff", "Architect"
-- Focus on: Junior roles, Entry-level positions, 0-2 years experience roles
-- Hebrew terms should include: ג'וניור, מתחיל/ה, ללא ניסיון, משרה ראשונה`;
+⚠️ IMPORTANT - CANDIDATE IS JUNIOR LEVEL (0-2 years experience):
+- AVOID: "Senior", "Lead", "Principal", "Staff", "Architect", "סניור", "בכיר"
+- PREFER: "Junior", "Entry Level", "ג'וניור", "מתחיל/ה"
+- Every "combined" query should include "Junior" or "Entry" to filter results
+- Focus on roles requiring 0-2 years of experience`;
     }
 
     const systemPrompt = `You are a SENIOR TECH RECRUITER in Israel with 15 years of experience placing developers in hi-tech companies.
@@ -426,7 +442,7 @@ export function analyzeProfileForScoring(
  * If someone held Role A, they're potentially a fit for Role B.
  */
 const ROLE_ADJACENCY: Record<string, string[]> = {
-  'full stack': ['frontend', 'backend', 'web developer', 'software engineer', 'full-stack', 'fullstack'],
+  'full stack': ['frontend', 'backend', 'web developer', 'software engineer', 'full-stack', 'fullstack', 'developer'],
   'frontend': ['ui developer', 'web developer', 'react developer', 'frontend engineer', 'ui engineer', 'full stack'],
   'backend': ['server developer', 'api developer', 'backend engineer', 'full stack', 'software engineer', 'platform engineer'],
   'devops': ['sre', 'site reliability', 'infrastructure', 'platform engineer', 'cloud engineer', 'system administrator', 'system engineer'],
@@ -437,7 +453,11 @@ const ROLE_ADJACENCY: Record<string, string[]> = {
   'data engineer': ['backend', 'etl developer', 'data architect', 'analytics engineer', 'bi developer'],
   'qa': ['test engineer', 'sdet', 'automation engineer', 'quality engineer', 'test automation'],
   'mobile': ['ios developer', 'android developer', 'react native', 'flutter developer'],
-  'software engineer': ['developer', 'programmer', 'full stack', 'backend', 'frontend'],
+  'software engineer': ['developer', 'programmer', 'full stack', 'backend', 'frontend', 'software developer'],
+  // Student-specific adjacency
+  'student': ['junior', 'intern', 'graduate', 'entry level', 'trainee', 'developer', 'software engineer'],
+  'developer': ['software engineer', 'programmer', 'full stack', 'web developer', 'software developer', 'מפתח'],
+  'מפתח': ['developer', 'software', 'programmer', 'full stack', 'פיתוח', 'תוכנה'],
 };
 
 /**
@@ -470,12 +490,13 @@ const SKILL_SYNONYMS: Record<string, string[]> = {
  * Extract what the job ACTUALLY requires — parse the requirements/description
  * to find "must have" vs "nice to have" skills.
  */
-function extractJobRequirements(desc: string, reqs: string): {
+function extractJobRequirements(desc: string, reqs: string, jobTitle: string = ''): {
   mustHave: string[];
   niceToHave: string[];
   allMentioned: string[];
 } {
   const fullText = `${desc} ${reqs}`.toLowerCase();
+  const title = jobTitle.toLowerCase();
   const mustHave: string[] = [];
   const niceToHave: string[] = [];
   const allMentioned: string[] = [];
@@ -592,7 +613,7 @@ export function scoreJobLocally(
   // ----------------------------------------------------------
   // STEP 1: Extract what the job ACTUALLY requires
   // ----------------------------------------------------------
-  const jobReqs = extractJobRequirements(desc, reqs);
+  const jobReqs = extractJobRequirements(desc, reqs, title);
 
   // ----------------------------------------------------------
   // STEP 2: Build expanded set of candidate skills
@@ -714,48 +735,25 @@ export function scoreJobLocally(
   // STEP 4: EXPERIENCE & SENIORITY FIT (25% of total score)
   // "Am I at the right career level for this role?"
   // ----------------------------------------------------------
-  let experienceScore = 50; // Default: can't detect level → assume neutral (not optimistic)
-
   const jobExpLevel = (job.experienceLevel || '').toLowerCase();
   const years = profileAnalysis.experienceYears;
   const candidateIsStudent = profileAnalysis.seniorityLevel === 'JUNIOR' && years <= 1;
+  const candidateIsJunior = profileAnalysis.seniorityLevel === 'JUNIOR';
 
-  // Parse ALL mentions of required years in the job text
-  const yearsPatterns = fullText.matchAll(/(\d+)\+?\s*(?:years?|שנ|שנות|שנים)/g);
-  let jobRequiredYears = 0;
-  for (const m of yearsPatterns) {
-    const y = parseInt(m[1]);
-    if (y > jobRequiredYears && y <= 20) jobRequiredYears = y; // Take the highest reasonable requirement
-  }
-
-  if (jobRequiredYears > 0) {
-    if (years >= jobRequiredYears && years <= jobRequiredYears + 4) {
-      experienceScore = 95; // Sweet spot — meets requirements, not overqualified
-    } else if (years >= jobRequiredYears) {
-      experienceScore = 80; // Overqualified slightly but still good
-      if (years > jobRequiredYears + 7) experienceScore = 55; // Significantly overqualified
-    } else if (years >= jobRequiredYears - 1) {
-      experienceScore = 70; // Close — could stretch
-    } else if (years >= jobRequiredYears - 2) {
-      experienceScore = 45; // Noticeable gap
-    } else {
-      experienceScore = Math.max(10, 30 - (jobRequiredYears - years) * 5); // Major gap
-    }
-  }
-
-  // Check seniority level keywords in the title
+  // Detect job seniority level from title and description
   const seniorityMap: Record<string, number> = {
-    'intern': 0, 'סטודנט': 0, 'student': 0,
-    'junior': 1, 'ג׳וניור': 1, 'entry': 1,
+    'intern': 0, 'סטודנט': 0, 'student': 0, 'התמחות': 0, 'internship': 0,
+    'junior': 1, "ג'וניור": 1, 'ג׳וניור': 1, 'entry': 1, 'entry level': 1, 'entry-level': 1, 'graduate': 1,
     'mid': 2, 'middle': 2, 'regular': 2, 'בינוני': 2,
     'senior': 3, 'סניור': 3, 'בכיר': 3, 'experienced': 3, 'sr.': 3, 'sr ': 3,
-    'lead': 4, 'principal': 4, 'staff': 4, 'architect': 4, 'מוביל': 4, 'head': 4,
+    'lead': 4, 'principal': 4, 'staff': 4, 'architect': 4, 'מוביל': 4, 'head': 4, 'ראש צוות': 4,
     'director': 5, 'vp': 5, 'cto': 5, 'manager': 4,
   };
 
   const candidateLevelNum = { JUNIOR: 1, MID: 2, SENIOR: 3, LEAD: 4 }[profileAnalysis.seniorityLevel] || 2;
   let detectedJobLevel = -1;
 
+  // Check title first, then description
   for (const [keyword, level] of Object.entries(seniorityMap)) {
     if (title.includes(keyword) || jobExpLevel.includes(keyword)) {
       detectedJobLevel = level;
@@ -763,23 +761,74 @@ export function scoreJobLocally(
     }
   }
 
+  // Parse ALL mentions of required years in the job text
+  const yearsPatterns = fullText.matchAll(/(\d+)\+?\s*(?:years?|שנ|שנות|שנים)/g);
+  let jobRequiredYears = 0;
+  for (const m of yearsPatterns) {
+    const y = parseInt(m[1]);
+    if (y > jobRequiredYears && y <= 20) jobRequiredYears = y;
+  }
+
+  // If no seniority keyword in title, infer from required years
+  if (detectedJobLevel < 0 && jobRequiredYears > 0) {
+    if (jobRequiredYears <= 1) detectedJobLevel = 0;       // intern/student
+    else if (jobRequiredYears <= 2) detectedJobLevel = 1;   // junior
+    else if (jobRequiredYears <= 5) detectedJobLevel = 2;   // mid
+    else if (jobRequiredYears <= 8) detectedJobLevel = 3;   // senior
+    else detectedJobLevel = 4;                               // lead+
+  }
+
+  // Calculate experience score
+  let experienceScore: number;
+
   if (detectedJobLevel >= 0) {
     const diff = candidateLevelNum - detectedJobLevel;
     if (diff === 0) {
-      experienceScore = Math.max(experienceScore, 90); // Exact level match
+      experienceScore = 92; // Exact level match — great!
     } else if (diff === 1) {
-      experienceScore = Math.max(experienceScore, 65); // Slight step down — overqualified but OK
+      experienceScore = 68; // Slightly overqualified
     } else if (diff === -1) {
-      experienceScore = Math.min(experienceScore, 55); // One level up — stretch, capped
+      experienceScore = 45; // One level up — stretch
     } else if (diff >= 2) {
-      experienceScore = Math.min(experienceScore, 35); // Way overqualified
+      experienceScore = 30; // Way overqualified
     } else if (diff <= -2) {
-      experienceScore = Math.min(experienceScore, 15); // Under-leveled significantly — very poor fit
+      experienceScore = 10; // Significantly under-leveled
+    } else {
+      experienceScore = 50;
     }
 
-    // Extra penalty: student/junior looking at senior+ roles
+    // Student/junior explicit level match bonus
+    if (candidateIsStudent && detectedJobLevel === 0) {
+      experienceScore = 95; // Student applying for student/intern position
+    } else if (candidateIsJunior && detectedJobLevel <= 1) {
+      experienceScore = 90; // Junior applying for junior/intern position
+    }
+
+    // Student vs senior = almost no chance
     if (candidateIsStudent && detectedJobLevel >= 3) {
-      experienceScore = Math.min(experienceScore, 10); // Student vs Senior = almost no chance
+      experienceScore = 5;
+    } else if (candidateIsJunior && detectedJobLevel >= 3) {
+      experienceScore = 10;
+    }
+  } else if (jobRequiredYears > 0) {
+    // No seniority keyword, but years are mentioned
+    if (years >= jobRequiredYears && years <= jobRequiredYears + 4) {
+      experienceScore = 90;
+    } else if (years >= jobRequiredYears) {
+      experienceScore = 75;
+    } else if (years >= jobRequiredYears - 1) {
+      experienceScore = 60;
+    } else {
+      experienceScore = Math.max(5, 30 - (jobRequiredYears - years) * 8);
+    }
+  } else {
+    // No seniority info at all — for students, be cautious (most untitled jobs are mid-level)
+    if (candidateIsStudent) {
+      experienceScore = 35; // Unlabeled jobs are usually not student-level
+    } else if (candidateIsJunior) {
+      experienceScore = 40;
+    } else {
+      experienceScore = 55; // Mid-level default
     }
   }
 
@@ -792,18 +841,35 @@ export function scoreJobLocally(
   const targetRoles = profileAnalysis.targetRoles.map(r => r.toLowerCase());
   const previousRoles = profileAnalysis.previousRoles;
 
+  // Strip seniority prefixes for fuzzy matching — "Software Developer Student" should match "Software Developer"
+  const stripSeniority = (s: string) => s.replace(/\b(senior|junior|lead|sr\.?|jr\.?|student|intern|סטודנט|ג'וניור|סניור|בכיר|מוביל)\b/gi, '').replace(/\s+/g, ' ').trim();
+  const cleanTitle = stripSeniority(title);
+
   // Direct title match with target roles
   for (const target of targetRoles) {
-    if (title.includes(target) || target.includes(title.replace(/senior |junior |lead |sr\.? |jr\.? /g, '').trim())) {
+    const cleanTarget = stripSeniority(target);
+    // Exact match (after stripping seniority)
+    if (cleanTitle.includes(cleanTarget) || cleanTarget.includes(cleanTitle)) {
       roleScore = 95;
       break;
     }
-    // Multi-word partial match — e.g. "Full Stack" matches "Full Stack Developer"
-    const words = target.split(/\s+/).filter(w => w.length > 2);
+    // Also check original
+    if (title.includes(target) || target.includes(cleanTitle)) {
+      roleScore = 95;
+      break;
+    }
+    // Multi-word partial match — "Software Developer" matches "Full Stack Software Developer"
+    const words = cleanTarget.split(/\s+/).filter(w => w.length > 2);
     if (words.length > 0) {
-      const matchCount = words.filter(w => title.includes(w)).length;
-      if (matchCount >= Math.ceil(words.length * 0.6)) {
+      const matchCount = words.filter(w => cleanTitle.includes(w)).length;
+      if (matchCount >= Math.ceil(words.length * 0.5)) {
         roleScore = Math.max(roleScore, 85);
+      }
+    }
+    // Individual significant word match — "developer" in target matches "developer" in title
+    for (const w of words) {
+      if (w.length >= 4 && cleanTitle.includes(w)) {
+        roleScore = Math.max(roleScore, 70);
       }
     }
   }

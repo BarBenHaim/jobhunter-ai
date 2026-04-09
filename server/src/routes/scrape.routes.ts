@@ -239,7 +239,7 @@ router.post('/smart-trigger', authMiddleware, async (req: AuthRequest, res: Resp
     }
 
     // Step 5: Filter irrelevant jobs
-    const relevantJobs = allJobs.filter(job => isTechRelevant(job.title))
+    let relevantJobs = allJobs.filter(job => isTechRelevant(job.title))
     const filtered = allJobs.length - relevantJobs.length
     if (filtered > 0) {
       logger.info(`Filtered out ${filtered} irrelevant jobs`)
@@ -247,6 +247,37 @@ router.post('/smart-trigger', authMiddleware, async (req: AuthRequest, res: Resp
 
     // Step 6: Analyze profile for local scoring (one-time)
     const profileAnalysis = analyzeProfileForScoring(structuredProfile, rawKnowledge, preferences)
+
+    // Step 6.5: SENIORITY PRE-FILTER — reject obviously wrong seniority levels
+    // This prevents saving 200+ senior jobs when the user is a student
+    const candidateLevel = profileAnalysis.seniorityLevel
+    const isStudentOrJunior = candidateLevel === 'JUNIOR' && profileAnalysis.experienceYears <= 2
+
+    if (isStudentOrJunior) {
+      const SENIOR_TITLE_PATTERNS = [
+        /\bsenior\b/i, /\bsr\.?\s/i, /\bסניור\b/i, /\bבכיר/i,
+        /\blead\b/i, /\bמוביל/i, /\bhead\b/i, /\bhead of\b/i,
+        /\bprincipal\b/i, /\bstaff\b/i, /\barchitect\b/i, /\bארכיטקט/i,
+        /\bdirector\b/i, /\bvp\b/i, /\bcto\b/i, /\bcio\b/i,
+        /\bmanager\b/i, /\bמנהל\b/i,
+        /\bteam lead/i, /\btech lead/i, /\beng(?:ineering)?\s*lead/i,
+        /\bראש\s*(?:צוות|קבוצ)/i,
+      ]
+
+      const beforeCount = relevantJobs.length
+      relevantJobs = relevantJobs.filter(job => {
+        const title = (job.title || '').toLowerCase()
+        // Allow jobs that explicitly say junior/student/intern
+        if (/junior|student|intern|סטודנט|ג'וניור|התמחות|entry/i.test(title)) return true
+        // Reject jobs with senior-level patterns in title
+        return !SENIOR_TITLE_PATTERNS.some(p => p.test(job.title || ''))
+      })
+
+      const seniorFiltered = beforeCount - relevantJobs.length
+      if (seniorFiltered > 0) {
+        logger.info(`Seniority pre-filter: removed ${seniorFiltered} senior/lead jobs for student/junior candidate`)
+      }
+    }
 
     // Step 7: Save jobs and score them locally
     let saved = 0
