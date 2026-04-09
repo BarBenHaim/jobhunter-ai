@@ -33,10 +33,9 @@ export class InterviewService {
       const prepPackage = await aiClient.generateInterviewPrep({
         jobTitle: job.title,
         company: job.company,
-        jobDescription: job.description,
-        jobRequirements: job.requirements,
+        jobDescription: job.description || undefined,
         personaName: persona.name,
-        userProfile: userProfile.structuredProfile as any,
+        profile: (userProfile as any).structuredProfile || undefined,
       });
 
       if (!prepPackage) {

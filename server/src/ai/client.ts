@@ -651,14 +651,27 @@ Return as a JSON array of strings: ["keyword1", "keyword2", ...]`;
         ? `\n\nPrevious messages sent:\n${context.previousMessages.map((msg, i) => `${i + 1}. ${msg}`).join('\n')}`
         : '';
 
-      const systemPrompt = `You are an expert professional email writer.
-Generate a compelling, professional follow-up email that:
-- Is concise (150-200 words)
-- Uses a professional but friendly tone
-- Includes specific references to the role and company
-- Demonstrates genuine interest without being pushy
-- Avoids sounding generic or desperate
-Type: ${typeGuidance[type]}`;
+      const systemPrompt = `You are a career coach specializing in professional follow-up communication for Israeli tech professionals.
+
+Generate a follow-up email that feels HUMAN and PERSONAL — not templated.
+
+TYPE: ${typeGuidance[type]}
+
+RULES:
+1. Keep to 100-180 words — recruiters skim, short emails get read
+2. Subject line must be specific: include job title + your name
+3. Opening: reference something SPECIFIC from the application or interview (never "I'm following up on...")
+4. Middle: add ONE piece of value — a relevant article, a project update, a new skill you learned
+5. Close: clear but not desperate. "Would love to discuss further" > "I hope to hear from you"
+6. Never apologize for following up
+7. Never use "just checking in" or "touching base"
+8. If this is a second/final follow-up, acknowledge the timeline without passive aggression
+9. If thank_you: mention a SPECIFIC topic discussed in the interview
+10. Output the email with Subject: line first, then body
+
+BAD EXAMPLE: "Dear Hiring Manager, I am writing to follow up on my application for the Software Developer position. I remain very interested in the role and believe I would be a great fit."
+GOOD EXAMPLE: "Subject: Bar Ben Haim — Junior Developer Application\n\nHi [Name],\n\nSince applying last week, I built a small tool that does [X] — it reminded me of the challenge your team mentioned in the job posting about [Y]. Happy to share the repo if useful.\n\nLooking forward to connecting."`;
+
 
       const userPrompt = `Write a ${type} follow-up email for:
 Persona: ${context.personaName}
@@ -691,33 +704,45 @@ Days since application: ${context.daysSinceApplication}${previousContext}`;
         throw new AIError('AI service not initialized');
       }
 
-      const systemPrompt = `You are an expert interview coach.
-Generate comprehensive interview preparation for a candidate.
-Return a JSON object with:
+      const systemPrompt = `You are a senior tech interview coach who has prepared hundreds of candidates for Israeli hi-tech companies.
+
+Generate a PRACTICAL, ACTIONABLE interview preparation package. Everything should be specific to THIS role at THIS company — no generic advice.
+
+Return a JSON object:
 {
   "companyResearch": {
-    "overview": "2-3 sentence company overview",
-    "industry": "Industry/sector",
-    "culture": "Company culture highlights",
-    "recentNews": ["News item 1", "News item 2"]
+    "overview": "2-3 sentences about what the company actually DOES and their main product",
+    "industry": "Specific sector (e.g., 'Cloud Security SaaS' not just 'Technology')",
+    "culture": "Specific culture signals from the job posting (remote/hybrid, team size, methodologies mentioned)",
+    "techStack": ["Technologies they likely use based on the job description"],
+    "interviewStyle": "What to expect based on company size and culture (startup = casual + take-home, enterprise = structured + whiteboard)"
   },
   "roleAnalysis": {
-    "keyResponsibilities": ["Responsibility 1", ...],
-    "successMetrics": ["Metric 1", ...],
-    "commonChallenges": ["Challenge 1", ...]
+    "keyResponsibilities": ["What you'll actually DO day-to-day — be specific"],
+    "successMetrics": ["How they'll measure your performance in the first 90 days"],
+    "redFlags": ["Things to watch out for in this role/company"]
   },
   "questionBank": [
     {
-      "question": "Question text",
-      "type": "behavioral|technical|cultural",
-      "framework": "STAR or technical approach",
-      "keyPoints": ["Point 1", "Point 2"]
+      "question": "Exact question they might ask",
+      "type": "behavioral|technical|system_design|cultural",
+      "sampleAnswer": "A concrete answer framework using the candidate's actual experience",
+      "keyPoints": ["Specific things to mention from your background"]
     }
   ],
-  "technicalPrep": ["Topic 1", "Topic 2"],
-  "questionsForInterviewer": ["Question 1", ...],
-  "closingTips": ["Tip 1", "Tip 2"]
-}`;
+  "technicalPrep": [
+    {
+      "topic": "Specific technical topic",
+      "depth": "What level of knowledge to expect",
+      "practiceResources": "What to practice or review"
+    }
+  ],
+  "questionsForInterviewer": ["Smart questions that show you've researched the company — NOT generic questions like 'what does a typical day look like'"],
+  "negotiationTips": ["Salary range expectations for this role in Israel", "What benefits to negotiate"]
+}
+
+IMPORTANT: Generate at least 8-10 questions in the questionBank, covering behavioral, technical, and cultural types.
+For each question, the sampleAnswer should reference the CANDIDATE'S actual experience from their profile.`;
 
       const profileStr = context.profile
         ? `\nCandidate Profile:\n${JSON.stringify(context.profile, null, 2)}`
@@ -756,27 +781,42 @@ Position: ${context.jobTitle}${jobStr}${profileStr}`;
         throw new AIError('AI service not initialized');
       }
 
-      const systemPrompt = `You are an expert cover letter writer.
-Generate a compelling, tailored cover letter that:
-- Is 3-4 paragraphs
-- Opens with a strong hook showing genuine interest
-- Demonstrates how the candidate's experience matches the role
-- Highlights 2-3 specific achievements or skills from their profile
-- Closes with enthusiasm and clear next steps
-- Uses a professional but personable tone`;
+      const systemPrompt = `You are a senior career advisor writing personalized cover letters for Israeli hi-tech professionals.
+
+RULES:
+1. NEVER use generic openers like "I am writing to express my interest" or "I was excited to see your posting"
+2. Open with a SPECIFIC hook: a relevant achievement, a connection to the company's product, or a shared mission
+3. Paragraph 2: Connect 2-3 CONCRETE achievements from the candidate's experience to the role's key requirements. Use numbers and specifics.
+4. Paragraph 3: Show you understand the company's challenges and explain how you'd contribute from day one
+5. Close with a confident call-to-action (not "I hope to hear from you")
+6. Keep to 250-350 words total
+7. Never mention the company name more than twice
+8. Write in English unless the job posting is in Hebrew
+9. Tone: confident and professional, NOT desperate or over-eager
+
+EXAMPLES OF BAD OPENINGS (NEVER USE):
+- "I am writing to apply for..."
+- "I was excited to discover..."
+- "With my background in..."
+
+EXAMPLES OF GOOD OPENINGS:
+- "When I built [specific project], I solved [specific problem] — the same challenge your team faces with [company product]."
+- "Three years of shipping [specific feature] taught me that [insight] — which is exactly why [role] caught my attention."`;
 
       const profileStr = profile
         ? `\nCandidate Profile:\n${JSON.stringify(profile, null, 2)}`
         : '';
 
-      const userPrompt = `Generate a cover letter for:
-Persona: ${persona.name} (${persona.title})
+      const userPrompt = `Write a cover letter for:
+Candidate: ${persona.name} — ${persona.title}
 ${profileStr}
 
-Position: ${job.title} at ${job.company}
-Location: ${job.location || 'Not specified'}
-Description: ${job.description}
-Requirements: ${job.requirements || 'Not specified'}`;
+Applying for: ${job.title} at ${job.company}
+Location: ${job.location || 'Israel'}
+Job Description: ${(job.description || '').substring(0, 1500)}
+Requirements: ${(job.requirements || '').substring(0, 800)}
+
+IMPORTANT: Reference SPECIFIC skills and achievements from the candidate's profile. Do NOT write generic statements.`;
 
       const response = await this.callAPI(systemPrompt, userPrompt);
       return response.trim();
@@ -854,6 +894,151 @@ Ensure messages are concise, professional, and contextually relevant.`;
       logger.error('Error generating message:', error);
       if (error instanceof AIError) throw error;
       throw new AIError('Failed to generate message');
+    }
+  }
+  /**
+   * Generate focused question bank for interview prep
+   */
+  async generateQuestionBank(context: {
+    jobTitle: string;
+    company: string;
+    description?: string | null;
+    requirements?: string | null;
+    personaBackground?: any;
+    topicFocus?: string;
+  }): Promise<any[]> {
+    try {
+      logger.info(`Generating question bank for ${context.company}`);
+
+      if (!this.isInitialized) {
+        throw new AIError('AI service not initialized');
+      }
+
+      const systemPrompt = `You are a senior tech interview coach in Israel.
+Generate a focused interview question bank. Return a JSON array of questions:
+[
+  {
+    "question": "The exact question",
+    "type": "behavioral|technical|system_design|cultural|situational",
+    "difficulty": "easy|medium|hard",
+    "sampleAnswer": "A strong answer structure using STAR framework for behavioral, or step-by-step for technical",
+    "keyPoints": ["Key point to mention 1", "Key point 2"],
+    "followUps": ["Likely follow-up question 1"]
+  }
+]
+
+Generate 10-15 questions. Mix types: 40% technical, 30% behavioral, 20% situational, 10% cultural.
+${context.topicFocus ? `Focus especially on: ${context.topicFocus}` : ''}
+Make answers SPECIFIC to the candidate's background when profile is provided.`;
+
+      const userPrompt = `Generate interview questions for:
+Position: ${context.jobTitle} at ${context.company}
+Description: ${(context.description || '').substring(0, 1000)}
+Requirements: ${(context.requirements || '').substring(0, 800)}
+${context.personaBackground ? `Candidate Background:\n${JSON.stringify(context.personaBackground, null, 2)}` : ''}`;
+
+      const response = await this.callAPI(systemPrompt, userPrompt);
+      return this.parseJSON<any[]>(response);
+    } catch (error) {
+      logger.error('Error generating question bank:', error);
+      throw new AIError('Failed to generate question bank');
+    }
+  }
+
+  /**
+   * Generate company research for interview preparation
+   */
+  async generateCompanyResearch(context: {
+    company: string;
+    jobTitle: string;
+    jobDescription?: string | null;
+  }): Promise<any> {
+    try {
+      logger.info(`Generating company research for ${context.company}`);
+
+      if (!this.isInitialized) {
+        throw new AIError('AI service not initialized');
+      }
+
+      const systemPrompt = `You are a research analyst specializing in Israeli tech companies.
+Generate practical company research for interview preparation. Return JSON:
+{
+  "overview": "What the company does, main products, and market position (3-4 sentences)",
+  "founded": "Year founded and founders if known",
+  "size": "Estimated company size (employees)",
+  "funding": "Known funding rounds or public status",
+  "techStack": ["Known or likely technologies used"],
+  "culture": "Work culture, values, and what employees say",
+  "competitors": ["Main competitors in their space"],
+  "recentDevelopments": ["Recent news, product launches, or milestones"],
+  "interviewProcess": "What to expect in their interview process based on company size and culture",
+  "talkingPoints": ["Smart things to mention in the interview that show you researched the company"]
+}
+
+Be honest about what you know vs don't know. Don't fabricate specific details.`;
+
+      const userPrompt = `Research for interview at:
+Company: ${context.company}
+Role: ${context.jobTitle}
+${context.jobDescription ? `Job Context: ${context.jobDescription.substring(0, 800)}` : ''}`;
+
+      const response = await this.callAPI(systemPrompt, userPrompt);
+      return this.parseJSON<any>(response);
+    } catch (error) {
+      logger.error('Error generating company research:', error);
+      throw new AIError('Failed to generate company research');
+    }
+  }
+
+  /**
+   * Generate salary research for a role
+   */
+  async generateSalaryResearch(context: {
+    jobTitle: string;
+    company: string;
+    location?: string | null;
+    salary?: { min?: number; max?: number; currency?: string } | null;
+  }): Promise<any> {
+    try {
+      logger.info(`Generating salary research for ${context.jobTitle} at ${context.company}`);
+
+      if (!this.isInitialized) {
+        throw new AIError('AI service not initialized');
+      }
+
+      const systemPrompt = `You are a compensation analyst specializing in the Israeli tech market.
+Provide salary research and negotiation guidance. Return JSON:
+{
+  "estimatedRange": {
+    "min": 0,
+    "max": 0,
+    "currency": "ILS",
+    "period": "monthly"
+  },
+  "marketContext": "How this role's compensation compares to market average in Israel",
+  "factors": ["Factors that affect salary for this specific role"],
+  "negotiationTips": [
+    "Specific negotiation advice for this company/role type"
+  ],
+  "benefits": ["Common benefits to expect/negotiate for this type of company in Israel"],
+  "redFlags": ["Salary-related red flags to watch for"],
+  "sources": "Note: These are estimates based on general Israeli tech market data"
+}
+
+IMPORTANT: All salary estimates should be in Israeli Shekels (ILS) per month (gross).
+Be transparent that these are estimates. Israeli tech salaries vary significantly by company stage and location.`;
+
+      const userPrompt = `Salary research for:
+Role: ${context.jobTitle}
+Company: ${context.company}
+Location: ${context.location || 'Israel'}
+${context.salary ? `Listed salary: ${context.salary.min}-${context.salary.max} ${context.salary.currency}` : 'No salary listed'}`;
+
+      const response = await this.callAPI(systemPrompt, userPrompt);
+      return this.parseJSON<any>(response);
+    } catch (error) {
+      logger.error('Error generating salary research:', error);
+      throw new AIError('Failed to generate salary research');
     }
   }
 }

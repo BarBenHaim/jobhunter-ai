@@ -232,48 +232,121 @@ export class CVService {
     }
   }
 
-  async atsCheck(cvContent: any): Promise<{ score: number; issues: string[] }> {
+  async atsCheck(cvContent: any, jobDescription?: string): Promise<{ score: number; issues: string[]; recommendations: string[] }> {
     try {
       logger.info(`Running ATS validation`);
 
       const issues: string[] = [];
+      const recommendations: string[] = [];
       let score = 100;
 
-      // Check for common ATS issues
       const contentStr = JSON.stringify(cvContent).toLowerCase();
+      const content = typeof cvContent === 'string' ? cvContent : contentStr;
 
-      // Check for contact info
-      if (!contentStr.includes('email') || !contentStr.includes('phone')) {
-        issues.push('Missing contact information');
+      // === STRUCTURE CHECKS ===
+
+      // Contact information
+      const hasEmail = /[\w.-]+@[\w.-]+\.\w+/.test(content);
+      const hasPhone = /[\d\-+() ]{9,}/.test(content);
+      if (!hasEmail) {
+        issues.push('חסר כתובת אימייל');
         score -= 10;
       }
-
-      // Check for complex formatting that ATS might struggle with
-      if (cvContent.hasComplexFormatting) {
-        issues.push('Complex formatting detected - may not parse correctly in ATS');
-        score -= 15;
-      }
-
-      // Check for required keywords
-      if (!contentStr.includes('experience') && !contentStr.includes('skills')) {
-        issues.push('Missing expected CV sections (experience/skills)');
-        score -= 10;
-      }
-
-      // Check for education
-      if (!contentStr.includes('education') && !contentStr.includes('degree')) {
-        issues.push('No education information found');
+      if (!hasPhone) {
+        issues.push('חסר מספר טלפון');
         score -= 5;
       }
 
-      // Ensure score is between 0-100
+      // Required sections
+      const hasExperience = /experience|ניסיון|עבודה|employment/i.test(content);
+      const hasSkills = /skills|כישורים|טכנולוגיות|technologies/i.test(content);
+      const hasEducation = /education|השכלה|degree|תואר/i.test(content);
+      const hasSummary = /summary|profile|תקציר|אודות/i.test(content);
+
+      if (!hasExperience) { issues.push('חסר סעיף ניסיון תעסוקתי'); score -= 15; }
+      if (!hasSkills) { issues.push('חסר סעיף כישורים טכניים'); score -= 10; }
+      if (!hasEducation) { issues.push('חסר סעיף השכלה'); score -= 5; }
+      if (!hasSummary) { recommendations.push('מומלץ להוסיף תקציר מקצועי בתחילת קורות החיים'); score -= 3; }
+
+      // === FORMAT CHECKS ===
+
+      // Length check
+      const wordCount = content.split(/\s+/).length;
+      if (wordCount < 150) {
+        issues.push('קורות החיים קצרים מדי — מומלץ לפחות 300 מילים');
+        score -= 10;
+      } else if (wordCount > 1500) {
+        recommendations.push('קורות החיים ארוכים מדי — מומלץ עד 2 עמודים');
+        score -= 5;
+      }
+
+      // Check for ATS-unfriendly elements
+      if (/table|<table|colspan|rowspan/.test(content)) {
+        issues.push('נמצאו טבלאות — חלק ממערכות ATS לא מצליחות לפענח טבלאות');
+        score -= 10;
+      }
+      if (/image|<img|\.png|\.jpg|\.jpeg/.test(content)) {
+        issues.push('נמצאו תמונות — מערכות ATS לא קוראות תמונות');
+        score -= 8;
+      }
+
+      // === KEYWORD MATCHING (if job description provided) ===
+      if (jobDescription) {
+        const jobLower = jobDescription.toLowerCase();
+
+        // Extract tech keywords from job description
+        const TECH_KEYWORDS = [
+          'react', 'vue', 'angular', 'node.js', 'python', 'java', 'c#', 'go', 'rust',
+          'typescript', 'javascript', 'aws', 'azure', 'gcp', 'docker', 'kubernetes',
+          'postgresql', 'mongodb', 'redis', 'mysql', 'graphql', 'rest', 'microservices',
+          'ci/cd', 'git', 'linux', 'agile', 'scrum', 'html', 'css', 'sql',
+          'machine learning', 'deep learning', 'tensorflow', 'pytorch',
+          'react native', 'flutter', 'ios', 'android',
+        ];
+
+        const jobKeywords = TECH_KEYWORDS.filter(kw => jobLower.includes(kw));
+        const cvKeywords = TECH_KEYWORDS.filter(kw => content.includes(kw));
+        const matchedKeywords = jobKeywords.filter(kw => cvKeywords.includes(kw));
+        const missingKeywords = jobKeywords.filter(kw => !cvKeywords.includes(kw));
+
+        if (jobKeywords.length > 0) {
+          const keywordCoverage = matchedKeywords.length / jobKeywords.length;
+          if (keywordCoverage < 0.5) {
+            issues.push(`כיסוי מילות מפתח נמוך: ${matchedKeywords.length}/${jobKeywords.length} — חסרים: ${missingKeywords.slice(0, 5).join(', ')}`);
+            score -= Math.round((1 - keywordCoverage) * 20);
+          } else if (keywordCoverage < 0.75) {
+            recommendations.push(`כיסוי מילות מפתח סביר: ${matchedKeywords.length}/${jobKeywords.length} — שקול להוסיף: ${missingKeywords.slice(0, 3).join(', ')}`);
+            score -= 5;
+          }
+        }
+      }
+
+      // === QUALITY CHECKS ===
+
+      // Check for action verbs (good CV writing)
+      const actionVerbs = ['built', 'developed', 'designed', 'implemented', 'led', 'created', 'managed',
+        'optimized', 'improved', 'delivered', 'launched', 'architected', 'automated', 'reduced', 'increased',
+        'פיתחתי', 'הובלתי', 'יצרתי', 'שיפרתי', 'בניתי', 'תכננתי'];
+      const hasActionVerbs = actionVerbs.some(v => content.includes(v));
+      if (!hasActionVerbs) {
+        recommendations.push('מומלץ להשתמש בפעלי פעולה (built, developed, led) בתיאורי הניסיון');
+        score -= 3;
+      }
+
+      // Check for quantifiable achievements
+      const hasNumbers = /\d+%|\d+ (?:users?|projects?|clients?|team|people|applications)/i.test(content);
+      if (!hasNumbers) {
+        recommendations.push('מומלץ להוסיף מספרים ותוצאות מדידות (לדוגמה: "שיפרתי ביצועים ב-40%")');
+        score -= 3;
+      }
+
       score = Math.max(0, Math.min(100, score));
 
       logger.info(`ATS validation complete`, { score, issuesCount: issues.length });
-      return { score, issues };
+      return { score, issues, recommendations };
     } catch (error) {
       logger.error('Error in ATS validation:', error);
-      return { score: 50, issues: ['ATS validation failed'] };
+      return { score: 50, issues: ['בדיקת ATS נכשלה'], recommendations: [] };
     }
   }
 
