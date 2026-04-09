@@ -93,16 +93,39 @@ const TOP_ISRAELI_COMPANIES: Array<{
   { name: 'BigPanda', slug: 'bigpanda', category: 'growing', description: 'AIOps event correlation', atsProvider: 'greenhouse', careersUrl: 'https://boards.greenhouse.io/bigpanda' },
   { name: 'Spot.io (NetApp)', slug: 'spotio', category: 'growing', description: 'Cloud infrastructure optimization', atsProvider: 'greenhouse', careersUrl: 'https://boards.greenhouse.io/netaborspot' },
 
-  // === Global Companies with major Israel R&D ===
-  { name: 'Google Israel', slug: 'google', category: 'top_company', description: 'R&D center in Tel Aviv & Haifa', atsProvider: 'custom', careersUrl: 'https://www.google.com/about/careers/applications/jobs/results/?location=Israel' },
-  { name: 'Microsoft Israel', slug: 'microsoft', category: 'top_company', description: 'R&D center in Herzliya & Tel Aviv', atsProvider: 'custom', careersUrl: 'https://careers.microsoft.com/global/en/search?l=Israel' },
-  { name: 'Meta Israel', slug: 'meta', category: 'top_company', description: 'R&D center in Tel Aviv', atsProvider: 'custom', careersUrl: 'https://www.metacareers.com/jobs?offices[0]=Tel%20Aviv%2C%20Israel' },
-  { name: 'Amazon Israel', slug: 'amazon', category: 'top_company', description: 'AWS & retail R&D in Israel', atsProvider: 'custom', careersUrl: 'https://www.amazon.jobs/en/locations/israel' },
-  { name: 'Apple Israel', slug: 'apple', category: 'top_company', description: 'R&D center in Herzliya', atsProvider: 'custom', careersUrl: 'https://jobs.apple.com/en-us/search?location=israel-ISRL' },
-  { name: 'NVIDIA Israel', slug: 'nvidia', category: 'top_company', description: 'GPU & AI chip R&D in Israel', atsProvider: 'custom', careersUrl: 'https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite?locationCountry=c4f78be1a8f14da0ab49ce1162348a5e' },
-  { name: 'Intel Israel', slug: 'intel', category: 'top_company', description: 'Largest private employer in Israel', atsProvider: 'custom', careersUrl: 'https://jobs.intel.com/en/search-jobs/Israel' },
-  { name: 'Samsung Israel', slug: 'samsung', category: 'top_company', description: 'R&D center in Tel Aviv', atsProvider: 'custom', careersUrl: 'https://www.samsung.com/il/about-us/careers/' },
+  // === Additional Israeli Tech Companies ===
+  { name: 'Wix', slug: 'wix', category: 'unicorn', description: 'Website builder platform (NASDAQ: WIX)', atsProvider: 'greenhouse', careersUrl: 'https://boards.greenhouse.io/wix' },
+  { name: 'JFrog', slug: 'jfrog', category: 'top_company', description: 'DevOps platform (NASDAQ: FROG)', atsProvider: 'greenhouse', careersUrl: 'https://boards.greenhouse.io/jfrog' },
+  { name: 'Hibob', slug: 'hibob', category: 'growing', description: 'HR platform for modern businesses', atsProvider: 'greenhouse', careersUrl: 'https://boards.greenhouse.io/hibob' },
+  { name: 'ironSource', slug: 'ironsource', category: 'top_company', description: 'App monetization platform', atsProvider: 'greenhouse', careersUrl: 'https://boards.greenhouse.io/ironsource' },
+  { name: 'Lemonade', slug: 'lemonade', category: 'top_company', description: 'AI insurance (NYSE: LMND)', atsProvider: 'greenhouse', careersUrl: 'https://boards.greenhouse.io/lemonade' },
+  { name: 'Fiverr', slug: 'fiverr', category: 'unicorn', description: 'Freelance marketplace (NYSE: FVRR)', atsProvider: 'greenhouse', careersUrl: 'https://boards.greenhouse.io/fiverr' },
+  { name: 'Forter', slug: 'forter', category: 'growing', description: 'eCommerce fraud prevention', atsProvider: 'greenhouse', careersUrl: 'https://boards.greenhouse.io/forter' },
+  { name: 'Fundbox', slug: 'fundbox', category: 'growing', description: 'B2B payments & credit platform', atsProvider: 'greenhouse', careersUrl: 'https://boards.greenhouse.io/fundbox' },
+  { name: 'Yotpo', slug: 'yotpo', category: 'top_company', description: 'eCommerce marketing platform', atsProvider: 'greenhouse', careersUrl: 'https://boards.greenhouse.io/yotpo' },
+  { name: 'Bizzabo', slug: 'bizzabo', category: 'growing', description: 'Event management platform', atsProvider: 'greenhouse', careersUrl: 'https://boards.greenhouse.io/bizzabo' },
+  { name: 'Payoneer', slug: 'payoneer', category: 'unicorn', description: 'Global payments (NASDAQ: PAYO)', atsProvider: 'greenhouse', careersUrl: 'https://boards.greenhouse.io/payoneer' },
+  { name: 'Varonis', slug: 'varonis', category: 'top_company', description: 'Data security (NASDAQ: VRNS)', atsProvider: 'greenhouse', careersUrl: 'https://boards.greenhouse.io/varonis' },
+  { name: 'Redis', slug: 'redis', category: 'top_company', description: 'In-memory database platform', atsProvider: 'greenhouse', careersUrl: 'https://boards.greenhouse.io/redislabs' },
+  { name: 'Honeybook', slug: 'honeybook', category: 'growing', description: 'Business management for entrepreneurs', atsProvider: 'greenhouse', careersUrl: 'https://boards.greenhouse.io/honeybook' },
+  { name: 'Cybereason', slug: 'cybereason', category: 'top_company', description: 'Endpoint security platform', atsProvider: 'greenhouse', careersUrl: 'https://boards.greenhouse.io/cybereason' },
+  { name: 'Placer.ai', slug: 'placerai', category: 'growing', description: 'Location analytics platform', atsProvider: 'greenhouse', careersUrl: 'https://boards.greenhouse.io/placerai' },
+  { name: 'Perion Network', slug: 'perion', category: 'top_company', description: 'Digital advertising (NASDAQ: PERI)', atsProvider: 'greenhouse', careersUrl: 'https://boards.greenhouse.io/perion' },
+  { name: 'Kaltura', slug: 'kaltura', category: 'top_company', description: 'Video experience platform', atsProvider: 'greenhouse', careersUrl: 'https://boards.greenhouse.io/kaltura' },
+  { name: 'Nayax', slug: 'nayax', category: 'growing', description: 'Cashless payment solutions (TASE: NYAX)', atsProvider: 'greenhouse', careersUrl: 'https://boards.greenhouse.io/nayax' },
+  { name: 'ControlUp', slug: 'controlup', category: 'growing', description: 'Digital employee experience', atsProvider: 'greenhouse', careersUrl: 'https://boards.greenhouse.io/controlup' },
+  { name: 'Augury', slug: 'augury', category: 'growing', description: 'Machine health AI platform', atsProvider: 'greenhouse', careersUrl: 'https://boards.greenhouse.io/augaboraugury' },
+  { name: 'Mobileye', slug: 'mobileye', category: 'unicorn', description: 'Autonomous driving (NASDAQ: MBLY, Intel)', atsProvider: 'greenhouse', careersUrl: 'https://boards.greenhouse.io/maboretmobileye' },
+
+  // === Global Companies with major Israel R&D (now using Greenhouse where possible) ===
+  { name: 'Google Israel', slug: 'google', category: 'top_company', description: 'R&D center in Tel Aviv & Haifa', atsProvider: 'greenhouse', careersUrl: 'https://boards.greenhouse.io/google' },
+  { name: 'Microsoft Israel', slug: 'microsoft', category: 'top_company', description: 'R&D center in Herzliya & Tel Aviv', atsProvider: 'greenhouse', careersUrl: 'https://boards.greenhouse.io/microsoftit' },
+  { name: 'Meta Israel', slug: 'meta', category: 'top_company', description: 'R&D center in Tel Aviv', atsProvider: 'greenhouse', careersUrl: 'https://boards.greenhouse.io/meta' },
+  { name: 'Amazon Israel', slug: 'amazon', category: 'top_company', description: 'AWS & retail R&D in Israel', atsProvider: 'greenhouse', careersUrl: 'https://boards.greenhouse.io/amazon' },
 ];
+
+// Unified Israel location regex — used across all ATS scrapers
+const ISRAEL_LOCATION_REGEX = /israel|il\b|tel.?aviv|tlv|herzliya|hertzliya|ramat.?gan|haifa|jerusalem|beer.?sheva|bnei.?brak|petah.?tikva|rishon|netanya|rehovot|modiin|modi'in|kfar.?saba|hod.?hasharon|ra'anana|raanana|yokneam|yoqneam|nazareth|ashdod|ashkelon|lod|bat.?yam|givatayim|holon|kiryat|bnei|remote.*israel|israel.*remote/i;
 
 class CompanyDiscoveryService {
   private axiosInstance: AxiosInstance;
@@ -114,6 +137,22 @@ class CompanyDiscoveryService {
       headers: { 'User-Agent': this.USER_AGENT },
       timeout: 30000,
     });
+  }
+
+  /**
+   * Retry wrapper — retries a function up to N times with delay
+   */
+  private async withRetry<T>(fn: () => Promise<T>, retries = 2, delayMs = 1000): Promise<T> {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        return await fn();
+      } catch (error) {
+        if (attempt === retries) throw error;
+        logger.warn(`Retry ${attempt + 1}/${retries} after error`, { error });
+        await new Promise(resolve => setTimeout(resolve, delayMs * (attempt + 1)));
+      }
+    }
+    throw new Error('Unreachable');
   }
 
   // ============================================================
@@ -331,36 +370,36 @@ class CompanyDiscoveryService {
    */
   async scrapeGreenhouseJobs(boardSlug: string, companyName: string): Promise<CareerPageJob[]> {
     try {
-      // Greenhouse has a JSON API
-      const url = `https://boards-api.greenhouse.io/v1/boards/${boardSlug}/jobs`;
-      const response = await this.axiosInstance.get(url);
-      const jobs: CareerPageJob[] = [];
+      return await this.withRetry(async () => {
+        const url = `https://boards-api.greenhouse.io/v1/boards/${boardSlug}/jobs`;
+        const response = await this.axiosInstance.get(url);
+        const jobs: CareerPageJob[] = [];
 
-      const jobList = response.data.jobs || [];
-      for (const job of jobList) {
-        // Filter for Israel locations
-        const locations = job.location?.name || '';
-        const isIsrael = /israel|tel.?aviv|herzliya|ramat.?gan|haifa|jerusalem|beer.?sheva|bnei.?brak|petah.?tikva|rishon|netanya|rehovot/i.test(locations);
+        const jobList = response.data.jobs || [];
+        for (const job of jobList) {
+          const locations = job.location?.name || '';
+          const isIsrael = ISRAEL_LOCATION_REGEX.test(locations);
 
-        if (isIsrael) {
-          jobs.push({
-            title: job.title,
-            company: companyName,
-            location: locations,
-            locationType: /remote/i.test(locations) ? 'REMOTE' : /hybrid/i.test(locations) ? 'HYBRID' : 'ONSITE',
-            description: this.stripHtml(job.content || '').substring(0, 500),
-            sourceUrl: job.absolute_url || `https://boards.greenhouse.io/${boardSlug}/jobs/${job.id}`,
-            source: 'COMPANY_CAREER_PAGE',
-            department: job.departments?.[0]?.name,
-            atsProvider: 'greenhouse',
-          });
+          if (isIsrael) {
+            jobs.push({
+              title: job.title,
+              company: companyName,
+              location: locations,
+              locationType: /remote/i.test(locations) ? 'REMOTE' : /hybrid/i.test(locations) ? 'HYBRID' : 'ONSITE',
+              description: this.stripHtml(job.content || '').substring(0, 500),
+              sourceUrl: job.absolute_url || `https://boards.greenhouse.io/${boardSlug}/jobs/${job.id}`,
+              source: 'COMPANY_CAREER_PAGE',
+              department: job.departments?.[0]?.name,
+              atsProvider: 'greenhouse',
+            });
+          }
         }
-      }
 
-      logger.info(`Greenhouse ${boardSlug}: Found ${jobs.length} Israel jobs out of ${jobList.length} total`);
-      return jobs;
+        logger.info(`Greenhouse ${boardSlug}: Found ${jobs.length} Israel jobs out of ${jobList.length} total`);
+        return jobs;
+      });
     } catch (error) {
-      logger.warn(`Failed to scrape Greenhouse board: ${boardSlug}`, { error });
+      logger.warn(`Failed to scrape Greenhouse board: ${boardSlug} (after retries)`, { error });
       return [];
     }
   }
@@ -370,35 +409,36 @@ class CompanyDiscoveryService {
    */
   async scrapeLeverJobs(companySlug: string, companyName: string): Promise<CareerPageJob[]> {
     try {
-      // Lever has a JSON API
-      const url = `https://api.lever.co/v0/postings/${companySlug}?mode=json`;
-      const response = await this.axiosInstance.get(url);
-      const jobs: CareerPageJob[] = [];
+      return await this.withRetry(async () => {
+        const url = `https://api.lever.co/v0/postings/${companySlug}?mode=json`;
+        const response = await this.axiosInstance.get(url);
+        const jobs: CareerPageJob[] = [];
 
-      const postings = response.data || [];
-      for (const posting of postings) {
-        const location = posting.categories?.location || '';
-        const isIsrael = /israel|tel.?aviv|herzliya|ramat.?gan|haifa|jerusalem/i.test(location);
+        const postings = response.data || [];
+        for (const posting of postings) {
+          const location = posting.categories?.location || '';
+          const isIsrael = ISRAEL_LOCATION_REGEX.test(location);
 
-        if (isIsrael) {
-          jobs.push({
-            title: posting.text,
-            company: companyName,
-            location,
-            locationType: /remote/i.test(location) ? 'REMOTE' : 'HYBRID',
-            description: this.stripHtml(posting.descriptionPlain || posting.description || '').substring(0, 500),
-            sourceUrl: posting.hostedUrl || posting.applyUrl || '',
-            source: 'COMPANY_CAREER_PAGE',
-            department: posting.categories?.team || posting.categories?.department,
-            atsProvider: 'lever',
-          });
+          if (isIsrael) {
+            jobs.push({
+              title: posting.text,
+              company: companyName,
+              location,
+              locationType: /remote/i.test(location) ? 'REMOTE' : 'HYBRID',
+              description: this.stripHtml(posting.descriptionPlain || posting.description || '').substring(0, 500),
+              sourceUrl: posting.hostedUrl || posting.applyUrl || '',
+              source: 'COMPANY_CAREER_PAGE',
+              department: posting.categories?.team || posting.categories?.department,
+              atsProvider: 'lever',
+            });
+          }
         }
-      }
 
-      logger.info(`Lever ${companySlug}: Found ${jobs.length} Israel jobs out of ${postings.length} total`);
-      return jobs;
+        logger.info(`Lever ${companySlug}: Found ${jobs.length} Israel jobs out of ${postings.length} total`);
+        return jobs;
+      });
     } catch (error) {
-      logger.warn(`Failed to scrape Lever board: ${companySlug}`, { error });
+      logger.warn(`Failed to scrape Lever board: ${companySlug} (after retries)`, { error });
       return [];
     }
   }
@@ -408,35 +448,36 @@ class CompanyDiscoveryService {
    */
   async scrapeAshbyJobs(companySlug: string, companyName: string): Promise<CareerPageJob[]> {
     try {
-      // Ashby uses a POST API
-      const url = `https://api.ashbyhq.com/posting-api/job-board/${companySlug}`;
-      const response = await this.axiosInstance.get(url);
-      const jobs: CareerPageJob[] = [];
+      return await this.withRetry(async () => {
+        const url = `https://api.ashbyhq.com/posting-api/job-board/${companySlug}`;
+        const response = await this.axiosInstance.get(url);
+        const jobs: CareerPageJob[] = [];
 
-      const postings = response.data.jobs || [];
-      for (const posting of postings) {
-        const location = posting.location || posting.locationName || '';
-        const isIsrael = /israel|tel.?aviv|herzliya|ramat.?gan|haifa|jerusalem/i.test(location);
+        const postings = response.data.jobs || [];
+        for (const posting of postings) {
+          const location = posting.location || posting.locationName || '';
+          const isIsrael = ISRAEL_LOCATION_REGEX.test(location);
 
-        if (isIsrael) {
-          jobs.push({
-            title: posting.title,
-            company: companyName,
-            location,
-            locationType: /remote/i.test(location) ? 'REMOTE' : 'HYBRID',
-            description: (posting.descriptionPlain || '').substring(0, 500),
-            sourceUrl: `https://jobs.ashbyhq.com/${companySlug}/${posting.id}`,
-            source: 'COMPANY_CAREER_PAGE',
-            department: posting.departmentName,
-            atsProvider: 'ashby',
-          });
+          if (isIsrael) {
+            jobs.push({
+              title: posting.title,
+              company: companyName,
+              location,
+              locationType: /remote/i.test(location) ? 'REMOTE' : 'HYBRID',
+              description: (posting.descriptionPlain || '').substring(0, 500),
+              sourceUrl: `https://jobs.ashbyhq.com/${companySlug}/${posting.id}`,
+              source: 'COMPANY_CAREER_PAGE',
+              department: posting.departmentName,
+              atsProvider: 'ashby',
+            });
+          }
         }
-      }
 
-      logger.info(`Ashby ${companySlug}: Found ${jobs.length} Israel jobs`);
-      return jobs;
+        logger.info(`Ashby ${companySlug}: Found ${jobs.length} Israel jobs`);
+        return jobs;
+      });
     } catch (error) {
-      logger.warn(`Failed to scrape Ashby board: ${companySlug}`, { error });
+      logger.warn(`Failed to scrape Ashby board: ${companySlug} (after retries)`, { error });
       return [];
     }
   }
@@ -497,19 +538,31 @@ class CompanyDiscoveryService {
                 jobs = await this.scrapeAshbyJobs(slug, company.name);
                 break;
               }
+              case 'comeet':
+              case 'workday':
               default:
-                // Custom career pages (Google, Meta, etc.) — skip API scraping
+                // Comeet, Workday, and truly custom career pages — no API available
                 // These are included for reference / manual browsing
+                logger.debug(`Skipping ${company.name} (${company.atsProvider}) — no API scraper`);
                 break;
             }
 
-            // Filter by keywords if provided
+            // Filter by keywords if provided — use loose matching
+            // Each keyword is split into words, and a job matches if ANY word from ANY keyword appears
             if (keywords.length > 0 && jobs.length > 0) {
-              const kwLower = keywords.map(k => k.toLowerCase());
-              jobs = jobs.filter(j => {
-                const text = `${j.title} ${j.description} ${j.department || ''}`.toLowerCase();
-                return kwLower.some(kw => text.includes(kw));
-              });
+              const kwWords = new Set<string>();
+              for (const kw of keywords) {
+                for (const word of kw.toLowerCase().split(/\s+/)) {
+                  if (word.length >= 3) kwWords.add(word); // Skip very short words
+                }
+              }
+              if (kwWords.size > 0) {
+                jobs = jobs.filter(j => {
+                  const text = `${j.title} ${j.description} ${j.department || ''}`.toLowerCase();
+                  // Job matches if it contains at least 1 keyword word
+                  return [...kwWords].some(word => text.includes(word));
+                });
+              }
             }
 
             return { company: company.name, jobs, error: undefined };
