@@ -81,15 +81,24 @@ export class JobService {
         });
       }
 
+      // Per-persona isolation: when a personaId filter is supplied, only
+      // return jobs that have been scored for that persona. This is the
+      // mechanism used by the frontend to make sure a brand-new persona
+      // sees zero jobs until its own search populates them.
+      const personaScopeFilter: any = filters.personaId ? { personaId: filters.personaId } : undefined;
+
       if (filters.minScore !== undefined || filters.maxScore !== undefined) {
         where.scores = {
           some: {
+            ...(personaScopeFilter || {}),
             overallScore: {
               ...(filters.minScore !== undefined && { gte: filters.minScore }),
               ...(filters.maxScore !== undefined && { lte: filters.maxScore }),
             },
           },
         };
+      } else if (personaScopeFilter) {
+        where.scores = { some: personaScopeFilter };
       }
 
       if (filters.status) {

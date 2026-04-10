@@ -189,4 +189,9 @@ export interface SearchFilters {
   status?: string;
   dateFrom?: Date;
   dateTo?: Date;
+  experienceLevel?: string;
+  searchSessionId?: string;
+  minSmartScore?: number;
+  /** When present, only return jobs that have a JobScore for this persona. */
+  personaId?: string;
 }

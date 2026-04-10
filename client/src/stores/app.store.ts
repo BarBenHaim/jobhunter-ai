@@ -8,10 +8,26 @@ export interface Toast {
   duration?: number
 }
 
+const ACTIVE_PERSONA_KEY = 'activePersonaId'
+const TARGET_ROLES_KEY_PREFIX = 'targetRoles:'
+
+const readActivePersona = (): string | null => {
+  try { return localStorage.getItem(ACTIVE_PERSONA_KEY) } catch { return null }
+}
+
 export interface AppStore {
   // User state
   user: UserProfile | null
   setUser: (user: UserProfile | null) => void
+
+  // Active persona (profile scope) — used by backend job queries so
+  // jobs are isolated per-persona. A brand-new persona has zero jobs.
+  activePersonaId: string | null
+  setActivePersonaId: (id: string | null) => void
+
+  // Per-persona target roles (user's chosen CV role list)
+  getTargetRoles: (personaId: string) => string[] | null
+  setTargetRoles: (personaId: string, roles: string[]) => void
 
   // Notifications
   toasts: Toast[]
@@ -41,6 +57,29 @@ export interface AppStore {
 export const useAppStore = create<AppStore>((set) => ({
   user: null,
   setUser: (user) => set({ user }),
+
+  activePersonaId: readActivePersona(),
+  setActivePersonaId: (id) => {
+    try {
+      if (id) localStorage.setItem(ACTIVE_PERSONA_KEY, id)
+      else localStorage.removeItem(ACTIVE_PERSONA_KEY)
+    } catch {}
+    set({ activePersonaId: id })
+  },
+
+  getTargetRoles: (personaId) => {
+    try {
+      const raw = localStorage.getItem(TARGET_ROLES_KEY_PREFIX + personaId)
+      if (!raw) return null
+      const parsed = JSON.parse(raw)
+      return Array.isArray(parsed) ? parsed : null
+    } catch { return null }
+  },
+  setTargetRoles: (personaId, roles) => {
+    try {
+      localStorage.setItem(TARGET_ROLES_KEY_PREFIX + personaId, JSON.stringify(roles))
+    } catch {}
+  },
 
   toasts: [],
   addToast: (toast) =>

@@ -49,6 +49,26 @@ apiClient.interceptors.request.use(
     if (accessToken) {
       config.headers.Authorization = `Bearer ${accessToken}`
     }
+
+    // Per-persona isolation: automatically scope job list / job detail / stats
+    // requests to the active persona so a brand-new persona starts at 0 jobs.
+    // The server ignores unknown personaIds (returning an empty result set),
+    // which is the desired behavior.
+    try {
+      const method = (config.method || 'get').toLowerCase()
+      const url = config.url || ''
+      const isJobsRead =
+        method === 'get' &&
+        (url === '/jobs' || url.startsWith('/jobs?') || url === '/jobs/stats')
+
+      if (isJobsRead) {
+        const activePersonaId = localStorage.getItem('activePersonaId')
+        if (activePersonaId) {
+          config.params = { ...(config.params || {}), personaId: activePersonaId }
+        }
+      }
+    } catch { /* ignore */ }
+
     return config
   },
   (error) => Promise.reject(error)

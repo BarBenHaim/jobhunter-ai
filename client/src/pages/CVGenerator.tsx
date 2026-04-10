@@ -1,17 +1,23 @@
-import { useState, useEffect } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
 import { cvApi } from '@/services/cv.api'
 import { profileApi } from '@/services/profile.api'
-import { Download, Loader2, RefreshCw, Sparkles, CheckCircle, AlertCircle, Search, Briefcase, Target, ChevronRight } from 'lucide-react'
-
-const CV_VARIANTS = [
-  { id: 'general', name: 'General Purpose', icon: '📄', description: 'All-purpose CV for any tech role', color: 'gray' },
-  { id: 'frontend', name: 'Frontend Developer', icon: '🎨', description: 'Optimized for React, UI/UX roles', color: 'blue' },
-  { id: 'backend', name: 'Backend Developer', icon: '⚙️', description: 'Optimized for Node.js, API roles', color: 'green' },
-  { id: 'fullstack', name: 'Full Stack Developer', icon: '🔄', description: 'Balanced frontend + backend', color: 'purple' },
-  { id: 'data', name: 'Data / BI Analyst', icon: '📊', description: 'Optimized for data & analytics roles', color: 'yellow' },
-  { id: 'ai', name: 'AI / ML Engineer', icon: '🤖', description: 'Optimized for AI & machine learning roles', color: 'pink' },
-]
+import {
+  Download,
+  Loader2,
+  RefreshCw,
+  Sparkles,
+  CheckCircle,
+  AlertCircle,
+  Plus,
+  X,
+  Wand2,
+} from 'lucide-react'
+import {
+  RoleSuggestion,
+  getRoleById,
+  suggestRoles,
+  topRoleIds,
+} from '@/lib/roleSuggestions'
 
 interface CVResult {
   variant: string
@@ -22,94 +28,106 @@ interface CVResult {
   error?: string
 }
 
-interface Job {
-  id: string
-  title: string
-  company: string
-  location?: string
-  source?: string
-  postedAt?: string
-  description?: string
-}
+const TARGET_ROLES_STORAGE_KEY = 'cvTargetRoles'
 
-interface JobCVResult {
-  pdfPath?: string
-  docxPath?: string
-  atsValidation?: { score: number }
-  cvContent?: {
-    summary?: string
-    skills?: string[]
-    keywordInjections?: string[]
-    tailoredHighlights?: string[]
-    matchPercentage?: number
+/** Load the user's chosen role list from localStorage. */
+const loadSelectedRoles = (): string[] | null => {
+  try {
+    const raw = localStorage.getItem(TARGET_ROLES_STORAGE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : null
+  } catch {
+    return null
   }
 }
 
-export default function CVGenerator() {
-  const [searchParams] = useSearchParams()
-  const preselectedJobId = searchParams.get('jobId')
+const saveSelectedRoles = (ids: string[]) => {
+  try {
+    localStorage.setItem(TARGET_ROLES_STORAGE_KEY, JSON.stringify(ids))
+  } catch { /* ignore */ }
+}
 
-  const [activeTab, setActiveTab] = useState<'job' | 'variant'>('job')
+export default function CVGenerator() {
   const [profile, setProfile] = useState<any>(null)
+  const [loadingProfile, setLoadingProfile] = useState(true)
   const [generating, setGenerating] = useState<Record<string, boolean>>({})
   const [generated, setGenerated] = useState<Record<string, CVResult>>({})
   const [generatingAll, setGeneratingAll] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
+  const [pickerOpen, setPickerOpen] = useState(false)
 
-  // Job-specific tailoring state
-  const [jobs, setJobs] = useState<Job[]>([])
-  const [jobSearch, setJobSearch] = useState('')
-  const [selectedJob, setSelectedJob] = useState<Job | null>(null)
-  const [generatingForJob, setGeneratingForJob] = useState(false)
-  const [jobCVResult, setJobCVResult] = useState<JobCVResult | null>(null)
+  // Selected role IDs — the roles the user wants CVs generated for.
+  // Initially from localStorage, else auto-suggested from profile when loaded.
+  const [selectedRoles, setSelectedRoles] = useState<string[]>(
+    () => loadSelectedRoles() || []
+  )
+  const [rolesInitialized, setRolesInitialized] = useState(false)
 
   const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:3001/api'
 
-  // Fetch profile and jobs on mount
+  // Fetch profile on mount
   useEffect(() => {
-    profileApi.getProfile().then(setProfile).catch(console.error)
-    fetchJobs()
+    profileApi
+      .getProfile()
+      .then((p) => setProfile(p))
+      .catch(console.error)
+      .finally(() => setLoadingProfile(false))
   }, [])
 
-  // Auto-select job from URL param
+  // When the profile loads for the first time and the user has no saved
+  // role selection, seed it with the top 3 suggestions from the profile.
   useEffect(() => {
-    if (preselectedJobId && jobs.length > 0) {
-      const job = jobs.find((j: any) => j.id === preselectedJobId || j.id === preselectedJobId)
-      if (job) {
-        setSelectedJob(job)
-        setActiveTab('job')
-      }
+    if (rolesInitialized) return
+    if (loadingProfile) return
+    if (selectedRoles.length > 0) {
+      setRolesInitialized(true)
+      return
     }
-  }, [preselectedJobId, jobs])
+    const suggestions = topRoleIds(profile?.structuredProfile, 3)
+    setSelectedRoles(suggestions)
+    saveSelectedRoles(suggestions)
+    setRolesInitialized(true)
+  }, [loadingProfile, profile, rolesInitialized, selectedRoles.length])
 
-  const fetchJobs = async () => {
-    try {
-      const token = localStorage.getItem('token')
-      const res = await fetch(`${apiBase}/jobs?limit=100&sort=postedAt`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      const data = await res.json()
-      if (data.success) {
-        setJobs(data.data || [])
-      }
-    } catch (err) {
-      console.error('Failed to fetch jobs:', err)
-    }
-  }
-
-  // Filter jobs based on search
-  const filteredJobs = jobs.filter(j =>
-    (j.title?.toLowerCase().includes(jobSearch.toLowerCase()) ||
-      j.company?.toLowerCase().includes(jobSearch.toLowerCase()))
+  // Ranked roles (for the picker)
+  const rankedRoles: RoleSuggestion[] = useMemo(
+    () => suggestRoles(profile?.structuredProfile),
+    [profile]
   )
 
-  const handleGenerate = async (variant: string, format: string = 'pdf') => {
-    setGenerating(prev => ({ ...prev, [variant]: true }))
+  // Resolved Role objects for the currently selected IDs, preserving order.
+  const activeRoles: RoleSuggestion[] = useMemo(() => {
+    return selectedRoles
+      .map((id) => getRoleById(id))
+      .filter((r): r is RoleSuggestion => Boolean(r))
+  }, [selectedRoles])
+
+  const handleAddRole = (id: string) => {
+    if (selectedRoles.includes(id)) return
+    const next = [...selectedRoles, id]
+    setSelectedRoles(next)
+    saveSelectedRoles(next)
+  }
+
+  const handleRemoveRole = (id: string) => {
+    const next = selectedRoles.filter((r) => r !== id)
+    setSelectedRoles(next)
+    saveSelectedRoles(next)
+  }
+
+  const handleResetToSuggestions = () => {
+    const suggestions = topRoleIds(profile?.structuredProfile, 3)
+    setSelectedRoles(suggestions)
+    saveSelectedRoles(suggestions)
+  }
+
+  const handleGenerate = async (variant: string) => {
+    setGenerating((prev) => ({ ...prev, [variant]: true }))
     setError(null)
     setSuccessMsg(null)
     try {
-      // Generate both PDF and DOCX
       const [pdfResult, docxResult] = await Promise.all([
         cvApi.generateStandalone('pdf', variant).catch(() => null),
         cvApi.generateStandalone('docx', variant).catch(() => null),
@@ -118,95 +136,61 @@ export default function CVGenerator() {
       const pdfData = pdfResult?.data?.data || pdfResult?.data
       const docxData = docxResult?.data?.data || docxResult?.data
 
-      setGenerated(prev => ({
+      setGenerated((prev) => ({
         ...prev,
         [variant]: {
           variant,
           success: true,
           pdfPath: pdfData?.filePath || pdfData?.pdfPath,
           docxPath: docxData?.filePath || docxData?.docxPath,
-          atsScore: pdfData?.atsValidation?.score || pdfData?.atsScore || docxData?.atsValidation?.score || docxData?.atsScore || 85,
+          atsScore:
+            pdfData?.atsValidation?.score ||
+            pdfData?.atsScore ||
+            docxData?.atsValidation?.score ||
+            docxData?.atsScore ||
+            85,
         },
       }))
-      setSuccessMsg(`${variant} CV generated successfully!`)
+      const roleName = getRoleById(variant)?.nameHe || variant
+      setSuccessMsg(`CV ל-${roleName} נוצר בהצלחה!`)
       setTimeout(() => setSuccessMsg(null), 3000)
     } catch (err: any) {
-      const errMsg = err?.response?.data?.error?.message || err?.response?.data?.error || err?.message || 'Failed to generate CV'
-      setError(typeof errMsg === 'string' ? errMsg : 'Failed to generate CV. Check that ANTHROPIC_API_KEY is set.')
+      const errMsg =
+        err?.response?.data?.error?.message ||
+        err?.response?.data?.error ||
+        err?.message ||
+        'Failed to generate CV'
+      setError(typeof errMsg === 'string' ? errMsg : 'שגיאה ביצירת CV. ודא ש-ANTHROPIC_API_KEY מוגדר.')
     } finally {
-      setGenerating(prev => ({ ...prev, [variant]: false }))
+      setGenerating((prev) => ({ ...prev, [variant]: false }))
     }
   }
 
   const handleGenerateAll = async () => {
+    if (activeRoles.length === 0) return
     setGeneratingAll(true)
     setError(null)
     setSuccessMsg(null)
     try {
-      const result = await cvApi.generateATSVersions()
-      const data = result?.data?.data || result?.data
-
-      if (data?.versions && Array.isArray(data.versions)) {
-        const newGenerated: Record<string, CVResult> = {}
-        for (const v of data.versions) {
-          if (v.success) {
-            newGenerated[v.variant] = {
-              variant: v.variant,
-              success: true,
-              pdfPath: v.pdfPath,
-              docxPath: v.docxPath,
-              atsScore: v.atsScore || 85,
-            }
-          }
-        }
-        setGenerated(prev => ({ ...prev, ...newGenerated }))
-        const successCount = data.versions.filter((v: any) => v.success).length
-        setSuccessMsg(`Generated ${successCount}/${data.versions.length} CV versions!`)
-        setTimeout(() => setSuccessMsg(null), 5000)
-      } else {
-        // Fallback: generate one by one
-        for (const variant of CV_VARIANTS) {
-          try {
-            await handleGenerate(variant.id)
-          } catch {
-            // continue with next
-          }
-        }
+      // Call each role in sequence — the backend generateATSVersions endpoint
+      // uses a hardcoded list, so we fire per-role requests instead to respect
+      // the user's custom selection.
+      for (const role of activeRoles) {
+        try {
+          await handleGenerate(role.id)
+        } catch { /* continue with next */ }
       }
+      setSuccessMsg(`נוצרו ${activeRoles.length} גרסאות CV!`)
+      setTimeout(() => setSuccessMsg(null), 5000)
     } catch (err: any) {
-      const errMsg = err?.response?.data?.error?.message || err?.response?.data?.error || err?.message || 'Failed to generate CV versions'
-      setError(typeof errMsg === 'string' ? errMsg : 'Failed to generate. Make sure ANTHROPIC_API_KEY is configured on Railway.')
+      const errMsg =
+        err?.response?.data?.error?.message ||
+        err?.response?.data?.error ||
+        err?.message ||
+        'Failed to generate CV versions'
+      setError(typeof errMsg === 'string' ? errMsg : 'שגיאה ביצירה. ודא ש-ANTHROPIC_API_KEY מוגדר ב-Railway.')
     } finally {
       setGeneratingAll(false)
-    }
-  }
-
-  // Generate job-specific CV
-  const handleGenerateForJob = async () => {
-    if (!selectedJob) return
-
-    setGeneratingForJob(true)
-    setError(null)
-    setSuccessMsg(null)
-    try {
-      const result = await cvApi.generateForJob(selectedJob.id)
-      const data = result?.data
-
-      if (data) {
-        setJobCVResult({
-          pdfPath: data.pdfPath,
-          docxPath: data.docxPath,
-          atsValidation: data.atsValidation,
-          cvContent: data.cvContent,
-        })
-        setSuccessMsg(`CV tailored for ${selectedJob.title} generated successfully!`)
-        setTimeout(() => setSuccessMsg(null), 3000)
-      }
-    } catch (err: any) {
-      const errMsg = err?.response?.data?.error?.message || err?.response?.data?.error || err?.message || 'Failed to generate tailored CV'
-      setError(typeof errMsg === 'string' ? errMsg : 'Failed to generate CV. Check that ANTHROPIC_API_KEY is set.')
-    } finally {
-      setGeneratingForJob(false)
     }
   }
 
@@ -226,381 +210,341 @@ export default function CVGenerator() {
       a.click()
       a.remove()
       URL.revokeObjectURL(url)
-    } catch (err) {
-      setError('Failed to download file')
+    } catch {
+      setError('הורדת הקובץ נכשלה')
     }
   }
 
+  const hasProfile = Boolean(profile?.structuredProfile?.summary || profile?.structuredProfile?.experience?.length)
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-5" dir="rtl">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">CV Generator</h1>
-        <p className="text-gray-500 dark:text-gray-400 mt-1">Generate ATS-optimized CV versions tailored for different roles</p>
+        <h1 className="text-[24px] font-bold" style={{ color: 'var(--ink-primary)' }}>
+          מחולל קורות חיים
+        </h1>
+        <p className="text-[14px] mt-1" style={{ color: 'var(--ink-secondary)' }}>
+          צור גרסאות CV מותאמות לתפקידים שונים עם אופטימיזציה ל-ATS
+        </p>
       </div>
-
-      {/* Tab Navigation */}
-      <div className="flex gap-2 border-b border-gray-200 dark:border-gray-700">
-        <button
-          onClick={() => {
-            setActiveTab('job')
-            setJobCVResult(null)
-          }}
-          className={`px-4 py-3 font-medium border-b-2 transition-colors ${
-            activeTab === 'job'
-              ? 'border-primary-500 text-primary-600 dark:text-primary-400'
-              : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300'
-          }`}
-        >
-          <div className="flex items-center gap-2">
-            <Target className="h-4 w-4" />
-            התאמה למשרה
-          </div>
-        </button>
-        <button
-          onClick={() => setActiveTab('variant')}
-          className={`px-4 py-3 font-medium border-b-2 transition-colors ${
-            activeTab === 'variant'
-              ? 'border-primary-500 text-primary-600 dark:text-primary-400'
-              : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300'
-          }`}
-        >
-          <div className="flex items-center gap-2">
-            <Briefcase className="h-4 w-4" />
-            לפי סוג תפקיד
-          </div>
-        </button>
-      </div>
-
-      {/* Profile Summary Card */}
-      {profile && (
-        <div className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-6">
-          <div className="flex items-center gap-4">
-            <div className="h-14 w-14 rounded-full bg-gradient-to-br from-primary-500 to-purple-500 flex items-center justify-center text-white text-xl font-bold">
-              {profile.fullName?.charAt(0) || 'B'}
-            </div>
-            <div className="flex-1 min-w-0">
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{profile.fullName}</h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400">{profile.email} {profile.location && `· ${profile.location}`}</p>
-              {profile.structuredProfile?.summary && (
-                <p className="text-sm text-gray-600 dark:text-gray-300 mt-1 line-clamp-2">{profile.structuredProfile.summary}</p>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Messages */}
       {error && (
-        <div className="rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-4 flex items-start gap-3">
-          <AlertCircle className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5" />
+        <div
+          className="rounded-card px-4 py-3 flex items-start gap-3"
+          style={{ background: '#fdeded', border: '1px solid #f3b9b9' }}
+        >
+          <AlertCircle className="h-5 w-5 flex-shrink-0 mt-0.5" style={{ color: '#cc1016' }} />
           <div>
-            <p className="text-red-700 dark:text-red-400 text-sm font-medium">Error generating CV</p>
-            <p className="text-red-600 dark:text-red-500 text-sm mt-1">{error}</p>
+            <p className="text-[13px] font-semibold" style={{ color: '#cc1016' }}>שגיאה ביצירת CV</p>
+            <p className="text-[13px] mt-0.5" style={{ color: '#cc1016' }}>{error}</p>
           </div>
         </div>
       )}
 
       {successMsg && (
-        <div className="rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 p-4 flex items-center gap-3">
-          <CheckCircle className="h-5 w-5 text-green-500 flex-shrink-0" />
-          <p className="text-green-700 dark:text-green-400 text-sm font-medium">{successMsg}</p>
+        <div
+          className="rounded-card px-4 py-3 flex items-center gap-3"
+          style={{ background: '#e7f5ec', border: '1px solid #a3d4b0' }}
+        >
+          <CheckCircle className="h-5 w-5 flex-shrink-0" style={{ color: '#057642' }} />
+          <p className="text-[13px] font-semibold" style={{ color: '#057642' }}>{successMsg}</p>
         </div>
       )}
 
+      {/* Profile summary / missing-profile prompt */}
+      {loadingProfile ? (
+        <div className="rounded-card bg-white p-6 text-center" style={{ border: '1px solid var(--border)' }}>
+          <Loader2 className="animate-spin h-6 w-6 mx-auto" style={{ color: 'var(--brand)' }} />
+        </div>
+      ) : profile ? (
+        <div
+          className="rounded-card bg-white p-5"
+          style={{ border: '1px solid var(--border)', boxShadow: '0 0 0 1px rgba(0,0,0,0.04)' }}
+        >
+          <div className="flex items-center gap-4">
+            <div
+              className="h-14 w-14 rounded-full flex items-center justify-center text-white text-[22px] font-bold flex-shrink-0"
+              style={{ background: 'var(--brand)' }}
+            >
+              {profile.fullName?.charAt(0) || 'B'}
+            </div>
+            <div className="flex-1 min-w-0">
+              <h2 className="text-[16px] font-semibold" style={{ color: 'var(--ink-primary)' }}>
+                {profile.fullName}
+              </h2>
+              <p className="text-[13px]" style={{ color: 'var(--ink-secondary)' }}>
+                {profile.email}
+                {profile.location && ` · ${profile.location}`}
+              </p>
+              {profile.structuredProfile?.summary && (
+                <p className="text-[13px] mt-1 line-clamp-2" style={{ color: 'var(--ink-secondary)' }}>
+                  {profile.structuredProfile.summary}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {/* How it works */}
-      <div className="rounded-xl bg-primary-50/50 dark:bg-primary-900/10 border border-primary-100 dark:border-primary-900/30 p-4" dir="rtl">
-        <p className="text-sm text-primary-700 dark:text-primary-400">
-          <strong>איך זה עובד:</strong> {
-            activeTab === 'job'
-              ? 'בחר משרה ספציפית כדי לייצר CV שמותאם בדיוק לתיאור התפקיד. ה-AI מנתח את מילות המפתח, הדרישות, ושם החברה ומתאים את הניסיון והכישורים שלך בצורה אופטימלית.'
-              : 'כל גרסת CV מותאמת עם מילות מפתח, סדר כישורים, והדגשים שמתאימים לסוג התפקיד. ה-AI מנתח את הפרופיל שלך ומייצר גרסה שתעבור מערכות ATS בצורה אופטימלית.'
-          }
-          {!profile?.structuredProfile?.summary && ' עדכן קודם את הפרופיל שלך בעמוד Profile כדי לקבל תוצאות טובות יותר.'}
+      <div
+        className="rounded-card px-4 py-3"
+        style={{ background: 'var(--selected)', border: '1px solid #cfe3fa' }}
+      >
+        <p className="text-[13px]" style={{ color: 'var(--brand-hover)' }}>
+          <strong>איך זה עובד:</strong> בחר את התפקידים שאליהם אתה מגיש מועמדות. כל CV שמותאם עבור תפקיד ספציפי מכיל
+          מילות מפתח, סדר כישורים והדגשים שמתאימים לסוג התפקיד.
+          {!hasProfile && ' מלא תחילה את הפרופיל כדי שנוכל להמליץ אוטומטית על התפקידים שהכי מתאימים לניסיון שלך.'}
         </p>
       </div>
 
-      {/* TAB 1: Job-Specific Tailoring */}
-      {activeTab === 'job' && (
-        <div className="space-y-6">
-          {/* Search Jobs */}
-          <div className="relative">
-            <Search className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
-            <input
-              type="text"
-              placeholder="חפש משרה לפי כותרת או חברה..."
-              value={jobSearch}
-              onChange={(e) => setJobSearch(e.target.value)}
-              className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 transition-all"
-            />
+      {/* Selected roles section */}
+      <div
+        className="rounded-card bg-white p-5"
+        style={{ border: '1px solid var(--border)', boxShadow: '0 0 0 1px rgba(0,0,0,0.04)' }}
+      >
+        <div className="flex items-start justify-between gap-3 mb-4 flex-wrap">
+          <div>
+            <h3 className="text-[16px] font-semibold" style={{ color: 'var(--ink-primary)' }}>
+              התפקידים שלי
+            </h3>
+            <p className="text-[13px] mt-0.5" style={{ color: 'var(--ink-secondary)' }}>
+              {hasProfile
+                ? 'מבוסס על הניסיון שמילאת בפרופיל. אפשר להוסיף או להסיר תפקידים.'
+                : 'עדכן את הפרופיל כדי לקבל המלצות מותאמות אישית.'}
+            </p>
           </div>
-
-          {/* Jobs List */}
-          <div className="space-y-3 max-h-96 overflow-y-auto">
-            {filteredJobs.length > 0 ? (
-              filteredJobs.map(job => (
-                <button
-                  key={job.id}
-                  onClick={() => {
-                    setSelectedJob(job)
-                    setJobCVResult(null)
-                  }}
-                  className={`w-full text-left rounded-2xl border-2 p-4 transition-all duration-200 ${
-                    selectedJob?.id === job.id
-                      ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
-                      : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-primary-300 dark:hover:border-primary-700'
-                  }`}
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <h3 className="text-base font-semibold text-gray-900 dark:text-white">{job.title}</h3>
-                      <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{job.company}</p>
-                      {job.location && (
-                        <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">📍 {job.location}</p>
-                      )}
-                      {job.source && (
-                        <p className="text-xs text-gray-500 dark:text-gray-500 mt-0.5">מקור: {job.source}</p>
-                      )}
-                    </div>
-                    {selectedJob?.id === job.id && (
-                      <CheckCircle className="h-5 w-5 text-primary-500 flex-shrink-0 mt-1" />
-                    )}
-                  </div>
-                </button>
-              ))
-            ) : (
-              <div className="text-center py-8">
-                <p className="text-gray-500 dark:text-gray-400">אין משרות עם ההתאמה הזו</p>
-              </div>
-            )}
-          </div>
-
-          {/* Generate Button */}
-          {selectedJob && !jobCVResult && (
-            <button
-              onClick={handleGenerateForJob}
-              disabled={generatingForJob}
-              className="w-full flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-primary-500 to-purple-500 text-white font-medium shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {generatingForJob ? (
-                <>
-                  <Loader2 className="animate-spin h-5 w-5" />
-                  מייצר CV מותאם אישית...
-                </>
-              ) : (
-                <>
-                  <Sparkles className="h-5 w-5" />
-                  ייצור CV מותאם למשרה
-                </>
-              )}
-            </button>
-          )}
-
-          {/* Job CV Result */}
-          {jobCVResult && selectedJob && (
-            <div className="space-y-6">
-              {/* Match Percentage */}
-              {jobCVResult.cvContent?.matchPercentage != null && (
-                <div className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-8">
-                  <div className="text-center">
-                    <div className="mb-4 flex justify-center">
-                      <div className={`relative h-32 w-32 rounded-full flex items-center justify-center text-5xl font-bold ${
-                        jobCVResult.cvContent.matchPercentage >= 80
-                          ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
-                          : jobCVResult.cvContent.matchPercentage >= 60
-                          ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400'
-                          : 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400'
-                      }`}>
-                        {jobCVResult.cvContent.matchPercentage}%
-                      </div>
-                    </div>
-                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                      {jobCVResult.cvContent.matchPercentage >= 80
-                        ? 'התאמה מעולה!'
-                        : jobCVResult.cvContent.matchPercentage >= 60
-                        ? 'התאמה טובה'
-                        : 'התאמה בסיסית'}
-                    </h3>
-                    <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
-                      ה-CV שלך מכיל {jobCVResult.cvContent.matchPercentage}% מהמילות המפתח החשובות בתיאור התפקיד
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {/* Summary Preview */}
-              {jobCVResult.cvContent?.summary && (
-                <div className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-6">
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">סיכום מותאם אישית</h3>
-                  <p className="text-gray-700 dark:text-gray-300 leading-relaxed">{jobCVResult.cvContent.summary}</p>
-                </div>
-              )}
-
-              {/* Tailored Highlights */}
-              {jobCVResult.cvContent?.tailoredHighlights && jobCVResult.cvContent.tailoredHighlights.length > 0 && (
-                <div className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-6">
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">הדגשים מותאמים למשרה</h3>
-                  <ul className="space-y-2">
-                    {jobCVResult.cvContent.tailoredHighlights.map((highlight, idx) => (
-                      <li key={idx} className="flex items-start gap-3">
-                        <ChevronRight className="h-5 w-5 text-primary-500 flex-shrink-0 mt-0.5" />
-                        <span className="text-gray-700 dark:text-gray-300">{highlight}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {/* Keyword Injections */}
-              {jobCVResult.cvContent?.keywordInjections && jobCVResult.cvContent.keywordInjections.length > 0 && (
-                <div className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-6">
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">מילות מפתח מתוך תיאור התפקיד</h3>
-                  <div className="flex flex-wrap gap-2">
-                    {jobCVResult.cvContent.keywordInjections.map((keyword, idx) => (
-                      <span
-                        key={idx}
-                        className="px-3 py-1.5 rounded-full bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400 text-sm font-medium"
-                      >
-                        {keyword}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Download Buttons */}
-              <div className="flex gap-3">
-                {jobCVResult.docxPath && (
-                  <button
-                    onClick={() => handleDownload(jobCVResult.docxPath!, `${selectedJob.title}-cv.docx`)}
-                    className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 text-sm font-medium hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors"
-                  >
-                    <Download size={18} />
-                    הורד DOCX
-                  </button>
-                )}
-                {jobCVResult.pdfPath && (
-                  <button
-                    onClick={() => handleDownload(jobCVResult.pdfPath!, `${selectedJob.title}-cv.pdf`)}
-                    className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 text-sm font-medium hover:bg-purple-100 dark:hover:bg-purple-900/30 transition-colors"
-                  >
-                    <Download size={18} />
-                    הורד PDF
-                  </button>
-                )}
-              </div>
-
-              {/* Regenerate Button */}
+          <div className="flex gap-2">
+            {hasProfile && (
               <button
-                onClick={() => setJobCVResult(null)}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                onClick={handleResetToSuggestions}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-pill text-[13px] font-semibold transition-colors"
+                style={{ color: 'var(--brand)', border: '1px solid var(--brand)' }}
               >
-                <RefreshCw size={16} />
-                בחר משרה אחרת
+                <Wand2 size={14} />
+                המלצה אוטומטית
               </button>
+            )}
+            <button
+              onClick={() => setPickerOpen((v) => !v)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-pill text-[13px] font-semibold transition-colors text-white"
+              style={{ background: 'var(--brand)' }}
+            >
+              <Plus size={14} />
+              הוסף תפקיד
+            </button>
+          </div>
+        </div>
+
+        {/* Active role chips */}
+        {activeRoles.length > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            {activeRoles.map((role) => (
+              <span
+                key={role.id}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-pill text-[13px] font-medium"
+                style={{ background: 'var(--selected)', color: 'var(--brand-hover)' }}
+              >
+                <span>{role.icon}</span>
+                {role.nameHe}
+                <button
+                  onClick={() => handleRemoveRole(role.id)}
+                  className="hover:opacity-70 transition-opacity"
+                  aria-label={`הסר ${role.nameHe}`}
+                >
+                  <X size={14} />
+                </button>
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p className="text-[13px] text-center py-4" style={{ color: 'var(--ink-tertiary)' }}>
+            עדיין לא נבחרו תפקידים. לחץ על "הוסף תפקיד" כדי להתחיל.
+          </p>
+        )}
+
+        {/* Role picker dropdown */}
+        {pickerOpen && (
+          <div className="mt-4 pt-4" style={{ borderTop: '1px solid var(--divider)' }}>
+            <p className="text-[12px] font-bold mb-3 uppercase tracking-wider" style={{ color: 'var(--ink-tertiary)' }}>
+              בחר תפקידים
+              {hasProfile && ' (ממוינים לפי התאמה לפרופיל שלך)'}
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              {rankedRoles.map((role) => {
+                const isSelected = selectedRoles.includes(role.id)
+                return (
+                  <button
+                    key={role.id}
+                    onClick={() => (isSelected ? handleRemoveRole(role.id) : handleAddRole(role.id))}
+                    className="flex items-center gap-3 p-3 rounded-card text-right transition-colors"
+                    style={{
+                      background: isSelected ? 'var(--selected)' : 'var(--subtle)',
+                      border: `1px solid ${isSelected ? 'var(--brand)' : 'var(--border)'}`,
+                    }}
+                  >
+                    <span className="text-[24px] flex-shrink-0">{role.icon}</span>
+                    <div className="flex-1 min-w-0 text-right">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[13px] font-semibold truncate" style={{ color: 'var(--ink-primary)' }}>
+                          {role.nameHe}
+                        </span>
+                        {hasProfile && (role.score || 0) > 10 && (
+                          <span
+                            className="text-[10px] font-bold px-1.5 py-0.5 rounded"
+                            style={{ background: 'var(--brand)', color: 'white' }}
+                          >
+                            {role.score}%
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] truncate" style={{ color: 'var(--ink-tertiary)' }}>
+                        {role.description}
+                      </p>
+                    </div>
+                    {isSelected && (
+                      <CheckCircle size={16} className="flex-shrink-0" style={{ color: 'var(--brand)' }} />
+                    )}
+                  </button>
+                )
+              })}
             </div>
-          )}
+          </div>
+        )}
+      </div>
+
+      {/* Generate all button */}
+      {activeRoles.length > 0 && (
+        <div className="flex justify-end">
+          <button
+            onClick={handleGenerateAll}
+            disabled={generatingAll}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-pill text-white text-[14px] font-semibold transition-all disabled:opacity-60"
+            style={{ background: 'var(--brand)' }}
+          >
+            {generatingAll ? (
+              <>
+                <Loader2 className="animate-spin h-4 w-4" />
+                מייצר את כל הגרסאות...
+              </>
+            ) : (
+              <>
+                <Sparkles className="h-4 w-4" />
+                צור את כל הגרסאות
+              </>
+            )}
+          </button>
         </div>
       )}
 
-      {/* TAB 2: Role Variants */}
-      {activeTab === 'variant' && (
-        <div>
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-end gap-4 mb-6">
-            <button
-              onClick={handleGenerateAll}
-              disabled={generatingAll}
-              className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-primary-500 to-purple-500 text-white font-medium shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {generatingAll ? (
-                <>
-                  <Loader2 className="animate-spin h-4 w-4" />
-                  Generating All...
-                </>
-              ) : (
-                <>
-                  <Sparkles className="h-4 w-4" />
-                  Generate All Versions
-                </>
-              )}
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {CV_VARIANTS.map(variant => {
-              const isGenerating = generating[variant.id] || generatingAll
-              const result = generated[variant.id]
-
-              return (
-                <div key={variant.id} className={`rounded-2xl border bg-white dark:bg-gray-800 p-6 transition-all duration-200 ${
-                  result?.success
-                    ? 'border-green-200 dark:border-green-800 shadow-sm'
-                    : 'border-gray-200 dark:border-gray-700 hover:shadow-lg'
-                }`}>
-                  <div className="flex items-start justify-between mb-3">
-                    <span className="text-3xl">{variant.icon}</span>
-                    {result?.atsScore != null && (
-                      <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
-                        result.atsScore >= 80 ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
-                        result.atsScore >= 60 ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' :
-                        'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                      }`}>
-                        ATS: {result.atsScore}%
-                      </span>
-                    )}
-                  </div>
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{variant.name}</h3>
-                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 mb-4">{variant.description}</p>
-
-                  {result?.success ? (
-                    <div className="space-y-2">
-                      <div className="flex gap-2">
-                        {result.docxPath && (
-                          <button
-                            onClick={() => handleDownload(result.docxPath, `${variant.id}-cv.docx`)}
-                            className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 text-sm font-medium hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors"
-                          >
-                            <Download size={14} />
-                            DOCX
-                          </button>
-                        )}
-                        {result.pdfPath && (
-                          <button
-                            onClick={() => handleDownload(result.pdfPath, `${variant.id}-cv.pdf`)}
-                            className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 text-sm font-medium hover:bg-purple-100 dark:hover:bg-purple-900/30 transition-colors"
-                          >
-                            <Download size={14} />
-                            PDF
-                          </button>
-                        )}
-                      </div>
-                      <button
-                        onClick={() => handleGenerate(variant.id)}
-                        disabled={isGenerating}
-                        className="w-full flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <RefreshCw size={14} />
-                        Regenerate
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => handleGenerate(variant.id)}
-                      disabled={isGenerating}
-                      className="w-full px-4 py-2.5 rounded-xl bg-gray-900 dark:bg-white text-white dark:text-gray-900 font-medium hover:bg-gray-800 dark:hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+      {/* Role variant cards */}
+      {activeRoles.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {activeRoles.map((role) => {
+            const isGenerating = generating[role.id] || generatingAll
+            const result = generated[role.id]
+            return (
+              <div
+                key={role.id}
+                className="rounded-card bg-white p-5 transition-all"
+                style={{
+                  border: `1px solid ${result?.success ? '#a3d4b0' : 'var(--border)'}`,
+                  boxShadow: '0 0 0 1px rgba(0,0,0,0.04)',
+                }}
+              >
+                <div className="flex items-start justify-between mb-3">
+                  <span className="text-[28px]">{role.icon}</span>
+                  {result?.atsScore != null && (
+                    <span
+                      className="px-2 py-0.5 rounded-pill text-[11px] font-semibold"
+                      style={{
+                        background: result.atsScore >= 80 ? '#e7f5ec' : result.atsScore >= 60 ? '#fff3cd' : '#fdeded',
+                        color: result.atsScore >= 80 ? '#057642' : result.atsScore >= 60 ? '#8a6d00' : '#cc1016',
+                      }}
                     >
-                      {isGenerating ? (
-                        <span className="flex items-center justify-center gap-2">
-                          <Loader2 className="animate-spin h-4 w-4" />
-                          Generating...
-                        </span>
-                      ) : 'Generate CV'}
-                    </button>
+                      ATS: {result.atsScore}%
+                    </span>
                   )}
                 </div>
-              )
-            })}
-          </div>
+                <h3 className="text-[15px] font-semibold" style={{ color: 'var(--ink-primary)' }}>
+                  {role.nameHe}
+                </h3>
+                <p className="text-[12px] mt-1 mb-4" style={{ color: 'var(--ink-secondary)' }}>
+                  {role.description}
+                </p>
+
+                {result?.success ? (
+                  <div className="space-y-2">
+                    <div className="flex gap-2">
+                      {result.docxPath && (
+                        <button
+                          onClick={() => handleDownload(result.docxPath!, `${role.id}-cv.docx`)}
+                          className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-pill text-[12px] font-semibold transition-colors"
+                          style={{ background: 'var(--subtle)', color: 'var(--brand)' }}
+                        >
+                          <Download size={13} />
+                          DOCX
+                        </button>
+                      )}
+                      {result.pdfPath && (
+                        <button
+                          onClick={() => handleDownload(result.pdfPath!, `${role.id}-cv.pdf`)}
+                          className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-pill text-[12px] font-semibold transition-colors"
+                          style={{ background: 'var(--subtle)', color: 'var(--brand)' }}
+                        >
+                          <Download size={13} />
+                          PDF
+                        </button>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => handleGenerate(role.id)}
+                      disabled={isGenerating}
+                      className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-pill text-[12px] font-medium transition-colors disabled:opacity-60"
+                      style={{ color: 'var(--ink-secondary)', border: '1px solid var(--border)' }}
+                    >
+                      <RefreshCw size={12} />
+                      ייצר מחדש
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => handleGenerate(role.id)}
+                    disabled={isGenerating}
+                    className="w-full px-4 py-2.5 rounded-pill text-[13px] font-semibold transition-colors disabled:opacity-60 text-white"
+                    style={{ background: 'var(--brand)' }}
+                  >
+                    {isGenerating ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <Loader2 className="animate-spin h-4 w-4" />
+                        מייצר...
+                      </span>
+                    ) : (
+                      'צור CV'
+                    )}
+                  </button>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Empty state — no active roles */}
+      {activeRoles.length === 0 && rolesInitialized && (
+        <div
+          className="rounded-card bg-white p-8 text-center"
+          style={{ border: '1px solid var(--border)' }}
+        >
+          <Wand2 className="h-10 w-10 mx-auto mb-3" style={{ color: 'var(--ink-tertiary)' }} />
+          <h3 className="text-[15px] font-semibold" style={{ color: 'var(--ink-primary)' }}>
+            התחל לבחור תפקידים
+          </h3>
+          <p className="text-[13px] mt-1" style={{ color: 'var(--ink-secondary)' }}>
+            הוסף את התפקידים שאליהם אתה מגיש מועמדות כדי שנוכל לייצר עבורם CV מותאם.
+          </p>
         </div>
       )}
     </div>
