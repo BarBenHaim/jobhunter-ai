@@ -6,6 +6,8 @@ import {
   authButtonCls,
   authErrorCls,
   authInputCls,
+  authInputStyle,
+  authLabelCls,
   authSuccessCls,
   extractErrorMessage,
 } from './AuthLayout'
@@ -31,11 +33,11 @@ export default function ResetPassword() {
     setError('')
 
     if (newPassword !== confirm) {
-      setError('Passwords do not match')
+      setError('הסיסמאות אינן תואמות')
       return
     }
     if (newPassword.length < 8) {
-      setError('Password must be at least 8 characters long')
+      setError('סיסמה חייבת להכיל לפחות 8 תווים')
       return
     }
 
@@ -45,70 +47,96 @@ export default function ResetPassword() {
       setDone(true)
       setTimeout(() => navigate('/auth/login', { replace: true }), 2000)
     } catch (err) {
-      setError(extractErrorMessage(err, 'Reset failed'))
+      setError(extractErrorMessage(err, 'איפוס הסיסמה נכשל'))
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <AuthLayout title="Set new password">
+    <AuthLayout
+      title="בחירת סיסמה חדשה"
+      subtitle="הזן את הטוקן מהאימייל והגדר סיסמה חדשה"
+      footer={
+        <Link to="/auth/login" className="text-[14px] font-semibold" style={{ color: 'var(--brand)' }}>
+          ← חזרה לכניסה
+        </Link>
+      }
+    >
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && <div className={authErrorCls}>{error}</div>}
         {done && (
           <div className={authSuccessCls}>
-            Password reset successfully. Redirecting to sign in…
+            הסיסמה אופסה בהצלחה. מעביר אותך לדף הכניסה…
           </div>
         )}
 
-        <input
-          type="email"
-          placeholder="Email address"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-          className={authInputCls}
-        />
+        <div>
+          <label className={authLabelCls} htmlFor="email">
+            אימייל
+          </label>
+          <input
+            id="email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            className={authInputCls}
+            style={authInputStyle}
+          />
+        </div>
 
-        <input
-          type="text"
-          placeholder="Reset token (from email)"
-          value={token}
-          onChange={(e) => setToken(e.target.value)}
-          required
-          className={authInputCls}
-        />
+        <div>
+          <label className={authLabelCls} htmlFor="token">
+            טוקן איפוס (מהאימייל)
+          </label>
+          <input
+            id="token"
+            type="text"
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+            required
+            className={authInputCls}
+            style={authInputStyle}
+          />
+        </div>
 
-        <input
-          type="password"
-          placeholder="New password"
-          value={newPassword}
-          onChange={(e) => setNewPassword(e.target.value)}
-          required
-          minLength={8}
-          autoComplete="new-password"
-          className={authInputCls}
-        />
+        <div>
+          <label className={authLabelCls} htmlFor="newPassword">
+            סיסמה חדשה
+          </label>
+          <input
+            id="newPassword"
+            type="password"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            required
+            minLength={8}
+            autoComplete="new-password"
+            className={authInputCls}
+            style={authInputStyle}
+          />
+        </div>
 
-        <input
-          type="password"
-          placeholder="Confirm new password"
-          value={confirm}
-          onChange={(e) => setConfirm(e.target.value)}
-          required
-          autoComplete="new-password"
-          className={authInputCls}
-        />
+        <div>
+          <label className={authLabelCls} htmlFor="confirm">
+            אימות סיסמה
+          </label>
+          <input
+            id="confirm"
+            type="password"
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            required
+            autoComplete="new-password"
+            className={authInputCls}
+            style={authInputStyle}
+          />
+        </div>
 
         <button type="submit" disabled={loading || done} className={authButtonCls}>
-          {loading ? 'Resetting…' : 'Reset password'}
+          {loading ? 'מאפס…' : 'איפוס סיסמה'}
         </button>
-
-        <div className="text-sm text-gray-300">
-          <Link to="/auth/login" className="text-primary-300 hover:text-primary-200 font-medium">
-            Back to sign in
-          </Link>
-        </div>
       </form>
     </AuthLayout>
   )

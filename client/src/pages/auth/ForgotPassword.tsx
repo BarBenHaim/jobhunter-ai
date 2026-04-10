@@ -6,6 +6,8 @@ import {
   authButtonCls,
   authErrorCls,
   authInputCls,
+  authInputStyle,
+  authLabelCls,
   authSuccessCls,
   extractErrorMessage,
 } from './AuthLayout'
@@ -26,7 +28,7 @@ export default function ForgotPassword() {
       setSent(true)
       if (res.devToken) setDevToken(res.devToken)
     } catch (err) {
-      setError(extractErrorMessage(err, 'Request failed'))
+      setError(extractErrorMessage(err, 'הבקשה נכשלה. נסה שוב.'))
     } finally {
       setLoading(false)
     }
@@ -34,41 +36,46 @@ export default function ForgotPassword() {
 
   return (
     <AuthLayout
-      title="Reset password"
-      subtitle="We'll send a reset link to your email"
+      title="איפוס סיסמה"
+      subtitle="נשלח לך קישור לאיפוס הסיסמה"
+      footer={
+        <Link to="/auth/login" className="text-[14px] font-semibold" style={{ color: 'var(--brand)' }}>
+          ← חזרה לכניסה
+        </Link>
+      }
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && <div className={authErrorCls}>{error}</div>}
         {sent && (
           <div className={authSuccessCls}>
-            If an account exists for that email, a reset link has been sent.
+            אם קיים חשבון עם האימייל הזה, קישור איפוס נשלח.
             {devToken && (
-              <div className="mt-2 text-xs break-all">
+              <div className="mt-2 text-[12px] break-all" dir="ltr">
                 <strong>Dev token:</strong> {devToken}
               </div>
             )}
           </div>
         )}
 
-        <input
-          type="email"
-          placeholder="Email address"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-          disabled={sent}
-          className={authInputCls}
-        />
+        <div>
+          <label className={authLabelCls} htmlFor="email">
+            אימייל
+          </label>
+          <input
+            id="email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            disabled={sent}
+            className={authInputCls}
+            style={authInputStyle}
+          />
+        </div>
 
         <button type="submit" disabled={loading || sent} className={authButtonCls}>
-          {loading ? 'Sending…' : sent ? 'Link sent' : 'Send reset link'}
+          {loading ? 'שולח…' : sent ? 'קישור נשלח' : 'שליחת קישור איפוס'}
         </button>
-
-        <div className="text-sm text-gray-300">
-          <Link to="/auth/login" className="text-primary-300 hover:text-primary-200 font-medium">
-            Back to sign in
-          </Link>
-        </div>
       </form>
     </AuthLayout>
   )

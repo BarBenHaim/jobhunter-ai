@@ -7,6 +7,8 @@ import {
   authButtonCls,
   authErrorCls,
   authInputCls,
+  authInputStyle,
+  authLabelCls,
   extractErrorMessage,
 } from './AuthLayout'
 
@@ -29,56 +31,73 @@ export default function Login() {
       setAuthToken(res.accessToken, res.refreshToken)
       navigate(redirectTo, { replace: true })
     } catch (err) {
-      setError(extractErrorMessage(err, 'Login failed'))
+      setError(extractErrorMessage(err, 'כניסה נכשלה. בדוק את פרטי ההתחברות.'))
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <AuthLayout title="Sign in" subtitle="Welcome back to JobHunter AI">
+    <AuthLayout
+      title="כניסה לחשבון"
+      subtitle="שמחים שחזרת"
+      footer={
+        <span className="text-[14px]" style={{ color: 'var(--ink-secondary)' }}>
+          חדש ב-JobHunter?{' '}
+          <Link to="/auth/register" className="font-semibold" style={{ color: 'var(--brand)' }}>
+            הצטרפות
+          </Link>
+        </span>
+      }
+    >
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && <div className={authErrorCls}>{error}</div>}
 
-        <input
-          type="email"
-          placeholder="Email address"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-          autoComplete="email"
-          className={authInputCls}
-        />
+        <div>
+          <label className={authLabelCls} htmlFor="email">
+            אימייל
+          </label>
+          <input
+            id="email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            autoComplete="email"
+            className={authInputCls}
+            style={authInputStyle}
+          />
+        </div>
 
-        <input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-          autoComplete="current-password"
-          className={authInputCls}
-        />
+        <div>
+          <label className={authLabelCls} htmlFor="password">
+            סיסמה
+          </label>
+          <input
+            id="password"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            autoComplete="current-password"
+            className={authInputCls}
+            style={authInputStyle}
+          />
+        </div>
 
-        <div className="text-right">
+        <div>
           <Link
             to="/auth/forgot-password"
-            className="text-sm text-primary-300 hover:text-primary-200 transition-colors"
+            className="text-[14px] font-semibold"
+            style={{ color: 'var(--brand)' }}
           >
-            Forgot password?
+            שכחתי סיסמה
           </Link>
         </div>
 
         <button type="submit" disabled={loading} className={authButtonCls}>
-          {loading ? 'Signing in…' : 'Sign in'}
+          {loading ? 'מתחבר…' : 'כניסה'}
         </button>
-
-        <div className="text-sm text-gray-300">
-          Don't have an account?{' '}
-          <Link to="/auth/register" className="text-primary-300 hover:text-primary-200 font-medium">
-            Create one
-          </Link>
-        </div>
       </form>
     </AuthLayout>
   )

@@ -7,6 +7,8 @@ import {
   authButtonCls,
   authErrorCls,
   authInputCls,
+  authInputStyle,
+  authLabelCls,
   extractErrorMessage,
 } from './AuthLayout'
 
@@ -24,11 +26,11 @@ export default function Register() {
     setError('')
 
     if (password !== confirmPassword) {
-      setError('Passwords do not match')
+      setError('הסיסמאות אינן תואמות')
       return
     }
     if (password.length < 8) {
-      setError('Password must be at least 8 characters long')
+      setError('סיסמה חייבת להכיל לפחות 8 תווים')
       return
     }
 
@@ -38,68 +40,111 @@ export default function Register() {
       setAuthToken(res.accessToken, res.refreshToken)
       navigate('/', { replace: true })
     } catch (err) {
-      setError(extractErrorMessage(err, 'Registration failed'))
+      setError(extractErrorMessage(err, 'הרשמה נכשלה. נסה שוב.'))
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <AuthLayout title="Create account" subtitle="Start your AI-powered job search">
+    <AuthLayout
+      title="הצטרפות ל-JobHunter"
+      subtitle="חיפוש העבודה החכם שלך מתחיל כאן"
+      footer={
+        <span className="text-[14px]" style={{ color: 'var(--ink-secondary)' }}>
+          כבר יש לך חשבון?{' '}
+          <Link to="/auth/login" className="font-semibold" style={{ color: 'var(--brand)' }}>
+            כניסה
+          </Link>
+        </span>
+      }
+    >
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && <div className={authErrorCls}>{error}</div>}
 
-        <input
-          type="text"
-          placeholder="Full name"
-          value={fullName}
-          onChange={(e) => setFullName(e.target.value)}
-          required
-          autoComplete="name"
-          className={authInputCls}
-        />
+        <div>
+          <label className={authLabelCls} htmlFor="fullName">
+            שם מלא
+          </label>
+          <input
+            id="fullName"
+            type="text"
+            value={fullName}
+            onChange={(e) => setFullName(e.target.value)}
+            required
+            autoComplete="name"
+            className={authInputCls}
+            style={authInputStyle}
+          />
+        </div>
 
-        <input
-          type="email"
-          placeholder="Email address"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-          autoComplete="email"
-          className={authInputCls}
-        />
+        <div>
+          <label className={authLabelCls} htmlFor="email">
+            אימייל
+          </label>
+          <input
+            id="email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            autoComplete="email"
+            className={authInputCls}
+            style={authInputStyle}
+          />
+        </div>
 
-        <input
-          type="password"
-          placeholder="Password (min 8 chars, letters + numbers)"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-          minLength={8}
-          autoComplete="new-password"
-          className={authInputCls}
-        />
+        <div>
+          <label className={authLabelCls} htmlFor="password">
+            סיסמה
+          </label>
+          <input
+            id="password"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            minLength={8}
+            autoComplete="new-password"
+            className={authInputCls}
+            style={authInputStyle}
+          />
+          <p className="mt-1 text-[12px]" style={{ color: 'var(--ink-tertiary)' }}>
+            לפחות 8 תווים, כולל אות וספרה
+          </p>
+        </div>
 
-        <input
-          type="password"
-          placeholder="Confirm password"
-          value={confirmPassword}
-          onChange={(e) => setConfirmPassword(e.target.value)}
-          required
-          autoComplete="new-password"
-          className={authInputCls}
-        />
+        <div>
+          <label className={authLabelCls} htmlFor="confirmPassword">
+            אימות סיסמה
+          </label>
+          <input
+            id="confirmPassword"
+            type="password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            required
+            autoComplete="new-password"
+            className={authInputCls}
+            style={authInputStyle}
+          />
+        </div>
+
+        <p className="text-[12px]" style={{ color: 'var(--ink-tertiary)' }}>
+          בלחיצה על "הצטרפות" אני מאשר/ת את{' '}
+          <a href="#" className="font-semibold" style={{ color: 'var(--brand)' }}>
+            תנאי השימוש
+          </a>{' '}
+          ואת{' '}
+          <a href="#" className="font-semibold" style={{ color: 'var(--brand)' }}>
+            מדיניות הפרטיות
+          </a>
+          .
+        </p>
 
         <button type="submit" disabled={loading} className={authButtonCls}>
-          {loading ? 'Creating account…' : 'Create account'}
+          {loading ? 'יוצר חשבון…' : 'הצטרפות'}
         </button>
-
-        <div className="text-sm text-gray-300">
-          Already have an account?{' '}
-          <Link to="/auth/login" className="text-primary-300 hover:text-primary-200 font-medium">
-            Sign in
-          </Link>
-        </div>
       </form>
     </AuthLayout>
   )
