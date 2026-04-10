@@ -13,6 +13,8 @@ import {
   ChevronLeft,
 } from 'lucide-react'
 import { useAppStore } from '@/stores/app.store'
+import { authApi } from '@/services/auth.api'
+import { clearAuthToken } from '@/services/api'
 
 const navItems = [
   { label: 'דשבורד', path: '/', icon: Home },
@@ -43,8 +45,13 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     return () => window.removeEventListener('resize', handleResize)
   }, [])
 
-  const handleLogout = () => {
-    localStorage.removeItem('token')
+  const handleLogout = async () => {
+    try {
+      await authApi.logout()
+    } catch {
+      // ignore
+    }
+    clearAuthToken()
     window.location.href = '/'
   }
 

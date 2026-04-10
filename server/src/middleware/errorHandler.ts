@@ -26,10 +26,9 @@ export const errorHandler = (
 
   res.status(statusCode).json({
     success: false,
-    error: {
-      statusCode,
-      message,
-    },
+    error: message, // string for backward compatibility
+    message,
+    statusCode,
   });
 };
 

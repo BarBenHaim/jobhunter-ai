@@ -16,9 +16,12 @@ import {
   X,
   Plus,
 } from 'lucide-react'
+import { Lock, Shield, Trash2 } from 'lucide-react'
 import { Card } from '@/components/common/Card'
 import { Badge } from '@/components/common/Badge'
 import { profileApi } from '@/services/profile.api'
+import { authApi } from '@/services/auth.api'
+import { clearAuthToken } from '@/services/api'
 
 const ROLE_SUGGESTIONS = [
   'Full Stack Developer',
@@ -52,6 +55,18 @@ const Settings = () => {
   const [linkedinUrl, setLinkedinUrl] = useState('')
   const [githubUrl, setGithubUrl] = useState('')
   const [portfolioUrl, setPortfolioUrl] = useState('')
+
+  // Security state
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [pwChangeLoading, setPwChangeLoading] = useState(false)
+  const [pwChangeMsg, setPwChangeMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [deletePassword, setDeletePassword] = useState('')
+  const [deleteConfirm, setDeleteConfirm] = useState('')
+  const [deleteLoading, setDeleteLoading] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   // Job preferences
   const [targetRoles, setTargetRoles] = useState<string[]>([])
@@ -128,6 +143,61 @@ const Settings = () => {
 
   const removeTag = (list: string[], setList: (v: string[]) => void, index: number) => {
     setList(list.filter((_, i) => i !== index))
+  }
+
+  const extractErr = (err: any, fallback: string) =>
+    err?.response?.data?.error ||
+    err?.response?.data?.message ||
+    err?.message ||
+    fallback
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setPwChangeMsg(null)
+
+    if (newPassword !== confirmPassword) {
+      setPwChangeMsg({ type: 'error', text: 'הסיסמאות החדשות אינן תואמות' })
+      return
+    }
+    if (newPassword.length < 8) {
+      setPwChangeMsg({ type: 'error', text: 'הסיסמה חייבת להיות לפחות 8 תווים' })
+      return
+    }
+
+    setPwChangeLoading(true)
+    try {
+      await authApi.changePassword(currentPassword, newPassword)
+      setPwChangeMsg({ type: 'success', text: 'הסיסמה עודכנה בהצלחה' })
+      setCurrentPassword('')
+      setNewPassword('')
+      setConfirmPassword('')
+    } catch (err: any) {
+      setPwChangeMsg({ type: 'error', text: extractErr(err, 'שגיאה בעדכון הסיסמה') })
+    } finally {
+      setPwChangeLoading(false)
+    }
+  }
+
+  const handleDeleteAccount = async () => {
+    setDeleteError(null)
+    if (deleteConfirm !== 'DELETE') {
+      setDeleteError('אנא כתוב DELETE כדי לאשר')
+      return
+    }
+    if (!deletePassword) {
+      setDeleteError('יש להזין סיסמה')
+      return
+    }
+    setDeleteLoading(true)
+    try {
+      await authApi.deleteAccount(deletePassword)
+      clearAuthToken()
+      window.location.href = '/auth/login'
+    } catch (err: any) {
+      setDeleteError(extractErr(err, 'שגיאה במחיקת החשבון'))
+    } finally {
+      setDeleteLoading(false)
+    }
   }
 
   if (isLoading) {
@@ -420,6 +490,165 @@ const Settings = () => {
             </div>
           </div>
         </div>
+      </Card>
+
+      {/* Security — Change password */}
+      <Card>
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+          <Lock size={20} className="text-primary-500" />
+          אבטחה וסיסמה
+        </h2>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+          עדכן את הסיסמה שלך. הסיסמה חייבת להיות לפחות 8 תווים ולכלול אותיות ומספרים.
+        </p>
+
+        {pwChangeMsg && (
+          <div
+            className={`mb-4 rounded-xl p-3 text-sm font-medium flex items-center gap-2 ${
+              pwChangeMsg.type === 'success'
+                ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 text-green-700 dark:text-green-400'
+                : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400'
+            }`}
+          >
+            {pwChangeMsg.type === 'success' ? (
+              <CheckCircle className="h-4 w-4 flex-shrink-0" />
+            ) : (
+              <AlertCircle className="h-4 w-4 flex-shrink-0" />
+            )}
+            {pwChangeMsg.text}
+          </div>
+        )}
+
+        <form onSubmit={handleChangePassword} className="space-y-3 max-w-md">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+              סיסמה נוכחית
+            </label>
+            <input
+              type="password"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+              required
+              autoComplete="current-password"
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+              dir="ltr"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+              סיסמה חדשה
+            </label>
+            <input
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              required
+              minLength={8}
+              autoComplete="new-password"
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+              dir="ltr"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+              אישור סיסמה חדשה
+            </label>
+            <input
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              required
+              autoComplete="new-password"
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+              dir="ltr"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={pwChangeLoading}
+            className="flex items-center gap-2 rounded-xl bg-primary-500 hover:bg-primary-600 text-white font-medium px-5 py-2.5 transition-colors disabled:opacity-50"
+          >
+            {pwChangeLoading ? <Loader2 className="animate-spin h-4 w-4" /> : <Shield size={18} />}
+            {pwChangeLoading ? 'מעדכן...' : 'עדכן סיסמה'}
+          </button>
+        </form>
+      </Card>
+
+      {/* Danger zone — Delete account */}
+      <Card>
+        <h2 className="text-lg font-semibold text-red-600 dark:text-red-400 mb-2 flex items-center gap-2">
+          <Trash2 size={20} />
+          אזור מסוכן
+        </h2>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+          מחיקת החשבון תסיר לצמיתות את כל הנתונים שלך: פרופיל, פרסונות, הגשות, ציונים והגדרות.
+          פעולה זו אינה ניתנת לשחזור.
+        </p>
+
+        {!deleteOpen ? (
+          <button
+            onClick={() => setDeleteOpen(true)}
+            className="inline-flex items-center gap-2 rounded-xl border border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-900/10 text-red-600 dark:text-red-400 px-5 py-2.5 font-medium hover:bg-red-100 dark:hover:bg-red-900/20 transition-colors"
+          >
+            <Trash2 size={18} />
+            מחק את החשבון שלי
+          </button>
+        ) : (
+          <div className="space-y-3 max-w-md rounded-xl border border-red-200 dark:border-red-900/50 bg-red-50/50 dark:bg-red-900/10 p-4">
+            {deleteError && (
+              <div className="text-red-700 dark:text-red-400 text-sm font-medium flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                {deleteError}
+              </div>
+            )}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                אישור: כתוב DELETE
+              </label>
+              <input
+                type="text"
+                value={deleteConfirm}
+                onChange={(e) => setDeleteConfirm(e.target.value)}
+                placeholder="DELETE"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                dir="ltr"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                הסיסמה הנוכחית שלך
+              </label>
+              <input
+                type="password"
+                value={deletePassword}
+                onChange={(e) => setDeletePassword(e.target.value)}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                dir="ltr"
+              />
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={handleDeleteAccount}
+                disabled={deleteLoading}
+                className="flex items-center gap-2 rounded-xl bg-red-500 hover:bg-red-600 text-white font-medium px-5 py-2.5 transition-colors disabled:opacity-50"
+              >
+                {deleteLoading ? <Loader2 className="animate-spin h-4 w-4" /> : <Trash2 size={18} />}
+                {deleteLoading ? 'מוחק...' : 'מחק לצמיתות'}
+              </button>
+              <button
+                onClick={() => {
+                  setDeleteOpen(false)
+                  setDeletePassword('')
+                  setDeleteConfirm('')
+                  setDeleteError(null)
+                }}
+                className="rounded-xl border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 font-medium px-5 py-2.5 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+              >
+                ביטול
+              </button>
+            </div>
+          </div>
+        )}
       </Card>
 
       {/* Save Button (bottom) */}

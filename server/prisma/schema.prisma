@@ -65,23 +65,35 @@ enum ResponseType {
 }
 
 model UserProfile {
-  id                 String   @id @default(cuid())
-  fullName           String
-  email              String   @unique
-  passwordHash       String?
-  phone              String?
-  location           String?
-  linkedinUrl        String?
-  githubUrl          String?
-  portfolioUrl       String?
-  rawKnowledge       Json?    @default("{}")
-  structuredProfile  Json?    @default("{}")
-  preferences        Json?    @default("{}")
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  id                    String    @id @default(cuid())
+  fullName              String
+  email                 String    @unique
+  passwordHash          String?
+  phone                 String?
+  location              String?
+  linkedinUrl           String?
+  githubUrl             String?
+  portfolioUrl          String?
+  rawKnowledge          Json?     @default("{}")
+  structuredProfile     Json?     @default("{}")
+  preferences           Json?     @default("{}")
 
-  personas           Persona[]
-  analyticsEvents    AnalyticsEvent[]
+  // Auth / security fields
+  emailVerified         Boolean   @default(false)
+  emailVerifyTokenHash  String?
+  emailVerifyExpires    DateTime?
+  resetTokenHash        String?
+  resetTokenExpires     DateTime?
+  lastLoginAt           DateTime?
+  failedLoginAttempts   Int       @default(0)
+  lockedUntil           DateTime?
+  tokensValidFrom       DateTime  @default(now())
+
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  personas              Persona[]
+  analyticsEvents       AnalyticsEvent[]
 
   @@map("user_profiles")
 }
