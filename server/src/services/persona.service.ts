@@ -11,6 +11,11 @@ export class PersonaService {
    * scrape pipeline uses this as the owner persona for newly discovered
    * jobs, so every authenticated user always has somewhere to attach
    * JobScore rows — which is what makes jobs per-user.
+   *
+   * CRITICAL: Persona.slug is `@unique` GLOBALLY (not per-user), so the
+   * default slug MUST embed something user-specific. We derive the slug from
+   * a short hash of the userId to guarantee uniqueness without leaking the
+   * full userId into the URL.
    */
   async getOrCreateDefaultPersona(userId: string) {
     try {
@@ -28,33 +33,47 @@ export class PersonaService {
       });
       if (anyExisting) return anyExisting;
 
-      // Make sure the slug is unique per-user — generate + suffix on collision.
-      let slug = generateSlug('Default');
-      let attempt = 0;
-      while (await prisma.persona.findFirst({ where: { userId, slug } })) {
-        attempt += 1;
-        slug = generateSlug(`Default ${attempt}`);
-        if (attempt > 20) {
-          slug = `default-${Date.now()}`;
-          break;
+      // Build a slug that's guaranteed globally unique by suffixing it with
+      // the last 12 chars of the userId. Retry on the vanishingly unlikely
+      // P2002 race by appending a timestamp fallback.
+      const userSuffix = userId.replace(/[^a-z0-9]/gi, '').slice(-12).toLowerCase();
+      const baseSlug = `default-${userSuffix || 'user'}`;
+      const tryCreate = async (slug: string) => {
+        return prisma.persona.create({
+          data: {
+            userId,
+            name: 'Default',
+            slug,
+            title: 'Software Engineer',
+            summary: 'Auto-created default persona.',
+            targetKeywords: [],
+            excludeKeywords: [],
+            skillPriority: {},
+            experienceRules: {},
+            searchSchedule: {},
+          },
+        });
+      };
+
+      let created;
+      try {
+        created = await tryCreate(baseSlug);
+      } catch (err: any) {
+        // P2002 = unique constraint violation — fall back to a timestamped slug
+        if (err?.code === 'P2002') {
+          logger.warn('Default persona slug collision, falling back to timestamped slug', {
+            userId, baseSlug,
+          });
+          created = await tryCreate(`${baseSlug}-${Date.now()}`);
+        } else {
+          throw err;
         }
       }
 
-      const created = await prisma.persona.create({
-        data: {
-          userId,
-          name: 'Default',
-          slug,
-          title: 'Software Engineer',
-          summary: 'Auto-created default persona.',
-          targetKeywords: [],
-          excludeKeywords: [],
-          skillPriority: {},
-          experienceRules: {},
-          searchSchedule: {},
-        },
+      logger.info(`Default persona auto-created for user: ${userId}`, {
+        personaId: created.id,
+        slug: created.slug,
       });
-      logger.info(`Default persona auto-created for user: ${userId}`, { personaId: created.id });
       return created;
     } catch (error) {
       logger.error('Error resolving default persona:', error);

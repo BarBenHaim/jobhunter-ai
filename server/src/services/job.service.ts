@@ -154,11 +154,38 @@ export class JobService {
         };
       }
 
-      if (filters.dateFrom || filters.dateTo) {
-        where.postedAt = {
-          ...(filters.dateFrom && { gte: filters.dateFrom }),
-          ...(filters.dateTo && { lte: filters.dateTo }),
-        };
+      // Date filter: scraped jobs often have `postedAt = null` (the source
+      // didn't publish an explicit posted date). If we naively filter on
+      // `postedAt >= dateFrom`, every such job gets hidden the moment the
+      // user clicks the "new" tab. Fall back to `scrapedAt` when `postedAt`
+      // is missing so freshly-scraped jobs remain visible.
+      if (filters.dateFrom) {
+        if (!where.AND) where.AND = [];
+        where.AND.push({
+          OR: [
+            { postedAt: { gte: filters.dateFrom } },
+            {
+              AND: [
+                { postedAt: null },
+                { scrapedAt: { gte: filters.dateFrom } },
+              ],
+            },
+          ],
+        });
+      }
+      if (filters.dateTo) {
+        if (!where.AND) where.AND = [];
+        where.AND.push({
+          OR: [
+            { postedAt: { lte: filters.dateTo } },
+            {
+              AND: [
+                { postedAt: null },
+                { scrapedAt: { lte: filters.dateTo } },
+              ],
+            },
+          ],
+        });
       }
 
       // Filter by search session ID (stored in rawData.searchSessionId)

@@ -466,6 +466,32 @@ router.post('/smart-trigger', authMiddleware, async (req: AuthRequest, res: Resp
       ? Math.round(jobsCreated.reduce((sum, j) => sum + (j.smartScore || 0), 0) / jobsCreated.length)
       : 0
 
+    // Post-scrape verification: count how many JobScore rows actually exist
+    // for this user's owning persona, and how many would show up under the
+    // "new jobs (24h)" filter. If `visibleToUser` is 0 after a supposedly
+    // successful scrape, something went wrong with ownership attachment or
+    // the list-query filter — surfacing it in the response makes debugging
+    // obvious instead of silently showing "no jobs".
+    let verification = {
+      personaJobScoreTotal: 0,
+      personaJobScoreRecent: 0,
+    }
+    try {
+      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000)
+      const [personaJobScoreTotal, personaJobScoreRecent] = await Promise.all([
+        prisma.jobScore.count({ where: { personaId: ownerPersona.id } }),
+        prisma.jobScore.count({
+          where: {
+            personaId: ownerPersona.id,
+            scoredAt: { gte: twentyFourHoursAgo },
+          },
+        }),
+      ])
+      verification = { personaJobScoreTotal, personaJobScoreRecent }
+    } catch (err) {
+      logger.warn('Post-scrape verification query failed', err)
+    }
+
     logger.info('Smart scrape completed', {
       total: allJobs.length,
       relevant: relevantJobs.length,
@@ -473,6 +499,9 @@ router.post('/smart-trigger', authMiddleware, async (req: AuthRequest, res: Resp
       duplicates,
       ownershipFailures,
       avgScore,
+      personaId: ownerPersona.id,
+      personaJobScoreTotal: verification.personaJobScoreTotal,
+      personaJobScoreRecent: verification.personaJobScoreRecent,
       searchSessionId,
     })
 
@@ -507,6 +536,8 @@ router.post('/smart-trigger', authMiddleware, async (req: AuthRequest, res: Resp
         totalFiltered: filtered,
         duplicates,
         ownershipFailures,
+        personaId: ownerPersona.id,
+        verification,
         jobsCreated: jobsCreated.slice(0, 30),
         sourceBreakdown: Object.entries(sourceBreakdown).map(([source, count]) => ({
           source,
