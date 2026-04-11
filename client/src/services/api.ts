@@ -50,25 +50,10 @@ apiClient.interceptors.request.use(
       config.headers.Authorization = `Bearer ${accessToken}`
     }
 
-    // Per-persona isolation: automatically scope job list / job detail / stats
-    // requests to the active persona so a brand-new persona starts at 0 jobs.
-    // The server ignores unknown personaIds (returning an empty result set),
-    // which is the desired behavior.
-    try {
-      const method = (config.method || 'get').toLowerCase()
-      const url = config.url || ''
-      const isJobsRead =
-        method === 'get' &&
-        (url === '/jobs' || url.startsWith('/jobs?') || url === '/jobs/stats')
-
-      if (isJobsRead) {
-        const activePersonaId = localStorage.getItem('activePersonaId')
-        if (activePersonaId) {
-          config.params = { ...(config.params || {}), personaId: activePersonaId }
-        }
-      }
-    } catch { /* ignore */ }
-
+    // Per-user isolation is enforced server-side via the Bearer token (the
+    // server walks JobScore → Persona.userId). No need to inject personaId
+    // from the client — callers that still want per-persona narrowing can
+    // pass it explicitly via React-Query params.
     return config
   },
   (error) => Promise.reject(error)

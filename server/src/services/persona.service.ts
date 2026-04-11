@@ -6,6 +6,62 @@ import { generateSlug } from '../utils/helpers';
 import { aiClient } from '../ai/client';
 
 export class PersonaService {
+  /**
+   * Resolve (and if missing, create) the "default" persona for a user. The
+   * scrape pipeline uses this as the owner persona for newly discovered
+   * jobs, so every authenticated user always has somewhere to attach
+   * JobScore rows — which is what makes jobs per-user.
+   */
+  async getOrCreateDefaultPersona(userId: string) {
+    try {
+      // Fast path: any active persona wins. Most users only have one.
+      const existing = await prisma.persona.findFirst({
+        where: { userId, isActive: true },
+        orderBy: { createdAt: 'asc' },
+      });
+      if (existing) return existing;
+
+      // Fall back to any persona (even inactive) before creating a new one.
+      const anyExisting = await prisma.persona.findFirst({
+        where: { userId },
+        orderBy: { createdAt: 'asc' },
+      });
+      if (anyExisting) return anyExisting;
+
+      // Make sure the slug is unique per-user — generate + suffix on collision.
+      let slug = generateSlug('Default');
+      let attempt = 0;
+      while (await prisma.persona.findFirst({ where: { userId, slug } })) {
+        attempt += 1;
+        slug = generateSlug(`Default ${attempt}`);
+        if (attempt > 20) {
+          slug = `default-${Date.now()}`;
+          break;
+        }
+      }
+
+      const created = await prisma.persona.create({
+        data: {
+          userId,
+          name: 'Default',
+          slug,
+          title: 'Software Engineer',
+          summary: 'Auto-created default persona.',
+          targetKeywords: [],
+          excludeKeywords: [],
+          skillPriority: {},
+          experienceRules: {},
+          searchSchedule: {},
+        },
+      });
+      logger.info(`Default persona auto-created for user: ${userId}`, { personaId: created.id });
+      return created;
+    } catch (error) {
+      logger.error('Error resolving default persona:', error);
+      throw error;
+    }
+  }
+
   async listPersonas(userId: string, includeInactive: boolean = false) {
     try {
       logger.info(`Listing personas for user: ${userId}`, { includeInactive });

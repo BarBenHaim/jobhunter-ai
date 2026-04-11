@@ -119,6 +119,7 @@ model Persona {
 
   applications       Application[]
   scoringRules       ScoringRule[]
+  jobScores          JobScore[]
 
   @@unique([userId, slug])
   @@map("personas")
@@ -162,6 +163,7 @@ model JobScore {
   jobId              String
   job                Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
   personaId          String
+  persona            Persona @relation(fields: [personaId], references: [id], onDelete: Cascade)
 
   overallScore       Float
   skillMatch         Float

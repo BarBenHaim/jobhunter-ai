@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { body, param, query, validationResult } from 'express-validator';
-import { authMiddleware, AuthRequest } from '../middleware/auth';
+import { authMiddleware, optionalAuthMiddleware, AuthRequest } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
 import { jobService } from '../services/job.service';
 import { scrapingQueue } from '../queue';
@@ -15,6 +15,7 @@ const router = Router();
 // GET /api/jobs - List jobs with query params
 router.get(
   '/',
+  optionalAuthMiddleware,
   [
     query('source').optional().isString(),
     query('dateFrom').optional().isISO8601(),
@@ -34,7 +35,7 @@ router.get(
     query('sort').optional().isString(),
     query('order').optional().isIn(['asc', 'desc']),
   ],
-  asyncHandler(async (req: Request, res: Response) => {
+  asyncHandler(async (req: AuthRequest, res: Response) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       res.status(400).json({
@@ -87,8 +88,10 @@ router.get(
       sortOrder: (req.query.order as 'asc' | 'desc') || 'desc',
     };
 
-    // Use a default userId for public access
-    const userId = (req as any).userId || 'public';
+    // Authenticated users only ever see jobs owned by one of their personas
+    // (via JobScore → Persona.userId). Anonymous callers fall back to the
+    // legacy 'public' scope, which returns the global pool.
+    const userId = req.userId || 'public';
     const result = await jobService.listJobs(userId, filters, pagination);
 
     res.status(200).json({
@@ -105,10 +108,14 @@ router.get(
   })
 );
 
-// GET /api/jobs/stats - Scraping stats (public)
+// GET /api/jobs/stats - Scraping stats (scoped per user when authenticated)
 router.get(
   '/stats',
-  asyncHandler(async (req: Request, res: Response) => {
+  optionalAuthMiddleware,
+  asyncHandler(async (_req: AuthRequest, res: Response) => {
+    // Source-level scraping stats are global metadata; we leave the shape
+    // unchanged so the dashboard keeps rendering. Per-user totals come from
+    // `/scrape/status` which calls `countJobs(userId)` instead.
     const stats = await jobService.getScrapingStats();
     res.status(200).json({
       success: true,
@@ -117,11 +124,12 @@ router.get(
   })
 );
 
-// GET /api/jobs/:id - Get job detail with scores (public)
+// GET /api/jobs/:id - Job detail (scoped per user when authenticated)
 router.get(
   '/:id',
+  optionalAuthMiddleware,
   [param('id').isString().notEmpty()],
-  asyncHandler(async (req: Request, res: Response) => {
+  asyncHandler(async (req: AuthRequest, res: Response) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       res.status(400).json({
@@ -135,7 +143,7 @@ router.get(
       return;
     }
 
-    const job = await jobService.getJob(req.params.id);
+    const job = await jobService.getJob(req.params.id, req.userId);
     res.status(200).json({
       success: true,
       data: job,

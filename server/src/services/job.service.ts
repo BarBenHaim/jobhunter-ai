@@ -5,6 +5,33 @@ import { JobData, SearchFilters, PaginationParams, PaginatedResponse } from '../
 import { generateJobDedupHash, calculateJobSimilarity } from '../utils/dedup';
 import { scrapingQueue } from '../queue';
 
+/**
+ * Build a Prisma `where` fragment that limits Job rows to ones owned by a
+ * specific user. Ownership is expressed via the JobScore → Persona → User chain:
+ * a user "owns" a job once it has been scored for one of their personas, which
+ * the smart-trigger scrape takes care of at save time.
+ *
+ * When `personaId` is supplied, the filter is narrowed further to that specific
+ * persona (but still requires the persona to belong to the user, which is
+ * enforced in the route layer).
+ */
+const buildUserJobScopeFilter = (
+  userId: string | null | undefined,
+  personaId?: string | null
+): any => {
+  if (!userId) {
+    // Anonymous request — keep legacy behaviour (global jobs).
+    return personaId ? { scores: { some: { personaId } } } : {};
+  }
+  return {
+    scores: {
+      some: personaId
+        ? { personaId, persona: { userId } }
+        : { persona: { userId } },
+    },
+  };
+};
+
 export class JobService {
   async listJobs(
     userId: string,
@@ -81,24 +108,28 @@ export class JobService {
         });
       }
 
-      // Per-persona isolation: when a personaId filter is supplied, only
-      // return jobs that have been scored for that persona. This is the
-      // mechanism used by the frontend to make sure a brand-new persona
-      // sees zero jobs until its own search populates them.
-      const personaScopeFilter: any = filters.personaId ? { personaId: filters.personaId } : undefined;
+      // User-level isolation: a job must have a JobScore for one of the
+      // requesting user's personas. This is what makes jobs per-user — a
+      // brand-new account starts with zero jobs, and nothing that user A
+      // scraped leaks to user B. When a specific personaId is supplied we
+      // narrow the filter further to that single persona.
+      const hasUser = Boolean(userId && userId !== 'public');
+      const personaScopePersonaId = filters.personaId || undefined;
 
       if (filters.minScore !== undefined || filters.maxScore !== undefined) {
         where.scores = {
           some: {
-            ...(personaScopeFilter || {}),
+            ...(personaScopePersonaId ? { personaId: personaScopePersonaId } : {}),
+            ...(hasUser ? { persona: { userId } } : {}),
             overallScore: {
               ...(filters.minScore !== undefined && { gte: filters.minScore }),
               ...(filters.maxScore !== undefined && { lte: filters.maxScore }),
             },
           },
         };
-      } else if (personaScopeFilter) {
-        where.scores = { some: personaScopeFilter };
+      } else if (hasUser || personaScopePersonaId) {
+        const userScope = buildUserJobScopeFilter(hasUser ? userId : null, personaScopePersonaId);
+        if (userScope.scores) where.scores = userScope.scores;
       }
 
       if (filters.status) {
@@ -209,12 +240,19 @@ export class JobService {
     }
   }
 
-  async getJob(jobId: string) {
+  async getJob(jobId: string, userId?: string | null) {
     try {
-      logger.info(`Getting job: ${jobId}`);
+      logger.info(`Getting job: ${jobId}`, { userId });
 
-      const job = await prisma.job.findUnique({
-        where: { id: jobId },
+      // When a userId is supplied, require that the job is owned by the user
+      // (has a JobScore for one of their personas). This keeps the detail
+      // view consistent with the list view.
+      const userScope = buildUserJobScopeFilter(userId);
+      const baseWhere: any = { id: jobId };
+      const where = userScope.scores ? { ...baseWhere, ...userScope } : baseWhere;
+
+      const job = await prisma.job.findFirst({
+        where,
         include: {
           scores: true,
           applications: {
@@ -387,12 +425,14 @@ export class JobService {
   }
 
   /**
-   * Count total active jobs in the database
+   * Count total active jobs in the database. If `userId` is supplied, only
+   * jobs owned by that user are counted (via persona → JobScore).
    */
-  async countJobs(): Promise<number> {
+  async countJobs(userId?: string | null): Promise<number> {
     try {
+      const scope = buildUserJobScopeFilter(userId);
       const count = await prisma.job.count({
-        where: { isActive: true },
+        where: { isActive: true, ...scope },
       });
       return count;
     } catch (error) {
@@ -402,14 +442,16 @@ export class JobService {
   }
 
   /**
-   * Get job counts grouped by source
+   * Get job counts grouped by source. Scoped per user when `userId` is
+   * supplied so each user only sees their own totals.
    */
-  async getSourceCounts(): Promise<Record<string, number>> {
+  async getSourceCounts(userId?: string | null): Promise<Record<string, number>> {
     try {
+      const scope = buildUserJobScopeFilter(userId);
       const sources = await prisma.job.groupBy({
         by: ['source'],
         _count: { source: true },
-        where: { isActive: true },
+        where: { isActive: true, ...scope },
       });
 
       const counts: Record<string, number> = {};

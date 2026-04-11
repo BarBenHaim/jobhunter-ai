@@ -3,8 +3,10 @@ import { lightweightScraperService } from '../services/lightweight-scraper.servi
 import { companyDiscoveryService } from '../services/company-discovery.service'
 import { jobService } from '../services/job.service'
 import { profileService } from '../services/profile.service'
+import { personaService } from '../services/persona.service'
 import { smartMatchService, analyzeProfileForScoring, scoreJobLocally } from '../services/smart-match.service'
-import { authMiddleware, AuthRequest } from '../middleware/auth'
+import { authMiddleware, optionalAuthMiddleware, AuthRequest } from '../middleware/auth'
+import prisma from '../db/prisma'
 import logger from '../utils/logger'
 
 const router = Router()
@@ -279,13 +281,73 @@ router.post('/smart-trigger', authMiddleware, async (req: AuthRequest, res: Resp
       }
     }
 
-    // Step 7: Save jobs and score them locally
+    // Step 7: Save jobs and score them locally.
+    //
+    // Jobs are per-user, so every saved job needs a JobScore attached to one
+    // of this user's personas. That JobScore row is what ties the global Job
+    // table back to the user — `listJobs` then filters on
+    // `scores.some.persona.userId`. Resolve the owning persona up front so we
+    // don't hit the DB once per job.
+    const ownerPersona = await personaService.getOrCreateDefaultPersona(userId)
+    logger.info('Smart scrape owner persona', { userId, personaId: ownerPersona.id })
+
     let saved = 0
     let duplicates = 0
     const jobsCreated: any[] = []
     const scoredJobs: any[] = []
 
     const minScoreThreshold = searchConfig.minScore || 0
+
+    // Helper: attach a JobScore row to the owner persona for this job.
+    // Required so downstream `listJobs` picks up the job under this user.
+    const attachOwnership = async (
+      jobId: string,
+      smartScore: { score: number; skillMatch?: number; experienceMatch?: number; matchedSkills?: string[]; missingSkills?: string[]; redFlags?: string[]; reasoning?: string }
+    ) => {
+      try {
+        // Map smartScore 0..100 to Recommendation buckets.
+        let recommendation: 'AUTO_APPLY' | 'MANUAL_REVIEW' | 'SKIP' | 'ARCHIVE' = 'SKIP'
+        if (smartScore.score >= 85) recommendation = 'AUTO_APPLY'
+        else if (smartScore.score >= 70) recommendation = 'MANUAL_REVIEW'
+        else if (smartScore.score >= 50) recommendation = 'SKIP'
+        else recommendation = 'ARCHIVE'
+
+        await prisma.jobScore.upsert({
+          where: { jobId_personaId: { jobId, personaId: ownerPersona.id } },
+          create: {
+            jobId,
+            personaId: ownerPersona.id,
+            overallScore: smartScore.score,
+            skillMatch: smartScore.skillMatch ?? smartScore.score,
+            experienceMatch: smartScore.experienceMatch ?? smartScore.score,
+            cultureFit: smartScore.score,
+            salaryMatch: smartScore.score,
+            acceptanceProb: smartScore.score,
+            recommendation,
+            reasoning: smartScore.reasoning,
+            matchedSkills: smartScore.matchedSkills || [],
+            missingSkills: smartScore.missingSkills || [],
+            redFlags: smartScore.redFlags || [],
+          },
+          update: {
+            overallScore: smartScore.score,
+            skillMatch: smartScore.skillMatch ?? smartScore.score,
+            experienceMatch: smartScore.experienceMatch ?? smartScore.score,
+            cultureFit: smartScore.score,
+            salaryMatch: smartScore.score,
+            acceptanceProb: smartScore.score,
+            recommendation,
+            reasoning: smartScore.reasoning,
+            matchedSkills: smartScore.matchedSkills || [],
+            missingSkills: smartScore.missingSkills || [],
+            redFlags: smartScore.redFlags || [],
+            updatedAt: new Date(),
+          },
+        })
+      } catch (err) {
+        logger.warn('Could not upsert JobScore for smart-trigger', { jobId, personaId: ownerPersona.id })
+      }
+    }
 
     for (const job of relevantJobs) {
       try {
@@ -304,6 +366,10 @@ router.post('/smart-trigger', authMiddleware, async (req: AuthRequest, res: Resp
             profileAnalysis,
             preferences
           )
+
+          // Attach the JobScore FIRST, before any early-return paths, so even
+          // jobs skipped by the min-score filter still belong to this user.
+          await attachOwnership(created.id, smartScore as any)
 
           // If minimum score is configured, skip jobs below the threshold
           if (minScoreThreshold > 0 && smartScore.score < minScoreThreshold) {
@@ -592,10 +658,11 @@ router.post('/single', async (req: Request, res: Response) => {
 })
 
 // GET /api/scrape/status - Get scraping status (matches ScrapeStatus type)
-router.get('/status', async (_req: Request, res: Response) => {
+router.get('/status', optionalAuthMiddleware, async (req: AuthRequest, res: Response) => {
   try {
-    const totalJobsInDB = await jobService.countJobs()
-    const sourceCounts = await jobService.getSourceCounts()
+    const userId = req.userId || null
+    const totalJobsInDB = await jobService.countJobs(userId)
+    const sourceCounts = await jobService.getSourceCounts(userId)
 
     const availableSources = ['INDEED', 'DRUSHIM', 'ALLJOBS', 'GOOGLE_JOBS', 'COMPANY_CAREER_PAGE', 'TOP_COMPANIES']
 
