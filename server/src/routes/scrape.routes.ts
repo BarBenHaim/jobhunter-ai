@@ -285,14 +285,24 @@ router.post('/smart-trigger', authMiddleware, async (req: AuthRequest, res: Resp
     //
     // Jobs are per-user, so every saved job needs a JobScore attached to one
     // of this user's personas. That JobScore row is what ties the global Job
-    // table back to the user — `listJobs` then filters on
-    // `scores.some.persona.userId`. Resolve the owning persona up front so we
-    // don't hit the DB once per job.
-    const ownerPersona = await personaService.getOrCreateDefaultPersona(userId)
-    logger.info('Smart scrape owner persona', { userId, personaId: ownerPersona.id })
+    // table back to the user — `listJobs` filters on
+    // `scores.some.personaId IN (user's personaIds)`. Resolve the owning
+    // persona up front so we don't hit the DB once per job.
+    let ownerPersona: { id: string }
+    try {
+      ownerPersona = await personaService.getOrCreateDefaultPersona(userId)
+      logger.info('Smart scrape owner persona', { userId, personaId: ownerPersona.id })
+    } catch (err) {
+      logger.error('Failed to resolve owner persona for smart scrape', err)
+      return res.status(500).json({
+        success: false,
+        error: 'Could not resolve a persona for your account. Please try again.',
+      })
+    }
 
     let saved = 0
     let duplicates = 0
+    let ownershipFailures = 0
     const jobsCreated: any[] = []
     const scoredJobs: any[] = []
 
@@ -300,10 +310,13 @@ router.post('/smart-trigger', authMiddleware, async (req: AuthRequest, res: Resp
 
     // Helper: attach a JobScore row to the owner persona for this job.
     // Required so downstream `listJobs` picks up the job under this user.
+    // Returns true on success, false on failure — callers skip persisting
+    // jobs whose ownership couldn't be attached so we never end up with
+    // orphan (invisible) jobs.
     const attachOwnership = async (
       jobId: string,
       smartScore: { score: number; skillMatch?: number; experienceMatch?: number; matchedSkills?: string[]; missingSkills?: string[]; redFlags?: string[]; reasoning?: string }
-    ) => {
+    ): Promise<boolean> => {
       try {
         // Map smartScore 0..100 to Recommendation buckets.
         let recommendation: 'AUTO_APPLY' | 'MANUAL_REVIEW' | 'SKIP' | 'ARCHIVE' = 'SKIP'
@@ -344,8 +357,16 @@ router.post('/smart-trigger', authMiddleware, async (req: AuthRequest, res: Resp
             updatedAt: new Date(),
           },
         })
-      } catch (err) {
-        logger.warn('Could not upsert JobScore for smart-trigger', { jobId, personaId: ownerPersona.id })
+        return true
+      } catch (err: any) {
+        ownershipFailures += 1
+        logger.error('attachOwnership upsert failed', {
+          jobId,
+          personaId: ownerPersona.id,
+          code: err?.code,
+          message: err?.message,
+        })
+        return false
       }
     }
 
@@ -369,7 +390,13 @@ router.post('/smart-trigger', authMiddleware, async (req: AuthRequest, res: Resp
 
           // Attach the JobScore FIRST, before any early-return paths, so even
           // jobs skipped by the min-score filter still belong to this user.
-          await attachOwnership(created.id, smartScore as any)
+          // If ownership attachment fails, skip the job entirely — an
+          // orphaned Job row without a JobScore for this user is invisible
+          // (which is exactly the bug we're trying to avoid).
+          const ownershipOk = await attachOwnership(created.id, smartScore as any)
+          if (!ownershipOk) {
+            continue
+          }
 
           // If minimum score is configured, skip jobs below the threshold
           if (minScoreThreshold > 0 && smartScore.score < minScoreThreshold) {
@@ -444,6 +471,7 @@ router.post('/smart-trigger', authMiddleware, async (req: AuthRequest, res: Resp
       relevant: relevantJobs.length,
       saved,
       duplicates,
+      ownershipFailures,
       avgScore,
       searchSessionId,
     })
@@ -478,6 +506,7 @@ router.post('/smart-trigger', authMiddleware, async (req: AuthRequest, res: Resp
         totalScraped: allJobs.length,
         totalFiltered: filtered,
         duplicates,
+        ownershipFailures,
         jobsCreated: jobsCreated.slice(0, 30),
         sourceBreakdown: Object.entries(sourceBreakdown).map(([source, count]) => ({
           source,

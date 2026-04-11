@@ -6,31 +6,19 @@ import { generateJobDedupHash, calculateJobSimilarity } from '../utils/dedup';
 import { scrapingQueue } from '../queue';
 
 /**
- * Build a Prisma `where` fragment that limits Job rows to ones owned by a
- * specific user. Ownership is expressed via the JobScore → Persona → User chain:
- * a user "owns" a job once it has been scored for one of their personas, which
- * the smart-trigger scrape takes care of at save time.
- *
- * When `personaId` is supplied, the filter is narrowed further to that specific
- * persona (but still requires the persona to belong to the user, which is
- * enforced in the route layer).
+ * Resolve every personaId that belongs to a given user. Used by the job
+ * list / detail / stats queries to express ownership through JobScore ->
+ * personaId WITHOUT requiring a Prisma relation on JobScore (which would
+ * need a schema change + `prisma generate`). Cached per-call.
  */
-const buildUserJobScopeFilter = (
-  userId: string | null | undefined,
-  personaId?: string | null
-): any => {
-  if (!userId) {
-    // Anonymous request — keep legacy behaviour (global jobs).
-    return personaId ? { scores: { some: { personaId } } } : {};
-  }
-  return {
-    scores: {
-      some: personaId
-        ? { personaId, persona: { userId } }
-        : { persona: { userId } },
-    },
-  };
+const getUserPersonaIds = async (userId: string): Promise<string[]> => {
+  const personas = await prisma.persona.findMany({
+    where: { userId },
+    select: { id: true },
+  });
+  return personas.map((p) => p.id);
 };
+
 
 export class JobService {
   async listJobs(
@@ -116,20 +104,46 @@ export class JobService {
       const hasUser = Boolean(userId && userId !== 'public');
       const personaScopePersonaId = filters.personaId || undefined;
 
+      // Pre-resolve the list of personaIds this user owns. Null means
+      // "anonymous or no scoping", empty array means "user has no personas
+      // yet → zero results".
+      let userPersonaIds: string[] | null = null;
+      if (hasUser) {
+        userPersonaIds = await getUserPersonaIds(userId);
+      }
+
+      // Build the persona-scoped `scores.some` filter. If the caller asked
+      // for a specific persona, make sure it belongs to the user.
+      let personaScopeFilter: any = null;
+      if (hasUser) {
+        if (personaScopePersonaId) {
+          if (!userPersonaIds!.includes(personaScopePersonaId)) {
+            // Requested persona doesn't belong to this user → no results.
+            return { data: [], total: 0, limit, offset, hasMore: false };
+          }
+          personaScopeFilter = { personaId: personaScopePersonaId };
+        } else if (userPersonaIds!.length > 0) {
+          personaScopeFilter = { personaId: { in: userPersonaIds! } };
+        } else {
+          // Authenticated user with zero personas → own no jobs yet.
+          return { data: [], total: 0, limit, offset, hasMore: false };
+        }
+      } else if (personaScopePersonaId) {
+        personaScopeFilter = { personaId: personaScopePersonaId };
+      }
+
       if (filters.minScore !== undefined || filters.maxScore !== undefined) {
         where.scores = {
           some: {
-            ...(personaScopePersonaId ? { personaId: personaScopePersonaId } : {}),
-            ...(hasUser ? { persona: { userId } } : {}),
+            ...(personaScopeFilter || {}),
             overallScore: {
               ...(filters.minScore !== undefined && { gte: filters.minScore }),
               ...(filters.maxScore !== undefined && { lte: filters.maxScore }),
             },
           },
         };
-      } else if (hasUser || personaScopePersonaId) {
-        const userScope = buildUserJobScopeFilter(hasUser ? userId : null, personaScopePersonaId);
-        if (userScope.scores) where.scores = userScope.scores;
+      } else if (personaScopeFilter) {
+        where.scores = { some: personaScopeFilter };
       }
 
       if (filters.status) {
@@ -247,12 +261,17 @@ export class JobService {
       // When a userId is supplied, require that the job is owned by the user
       // (has a JobScore for one of their personas). This keeps the detail
       // view consistent with the list view.
-      const userScope = buildUserJobScopeFilter(userId);
       const baseWhere: any = { id: jobId };
-      const where = userScope.scores ? { ...baseWhere, ...userScope } : baseWhere;
+      if (userId) {
+        const personaIds = await getUserPersonaIds(userId);
+        if (personaIds.length === 0) {
+          throw new NotFoundError(`Job with id ${jobId} not found`);
+        }
+        baseWhere.scores = { some: { personaId: { in: personaIds } } };
+      }
 
       const job = await prisma.job.findFirst({
-        where,
+        where: baseWhere,
         include: {
           scores: true,
           applications: {
@@ -430,11 +449,13 @@ export class JobService {
    */
   async countJobs(userId?: string | null): Promise<number> {
     try {
-      const scope = buildUserJobScopeFilter(userId);
-      const count = await prisma.job.count({
-        where: { isActive: true, ...scope },
-      });
-      return count;
+      const where: any = { isActive: true };
+      if (userId) {
+        const personaIds = await getUserPersonaIds(userId);
+        if (personaIds.length === 0) return 0;
+        where.scores = { some: { personaId: { in: personaIds } } };
+      }
+      return prisma.job.count({ where });
     } catch (error) {
       logger.error('Error counting jobs:', error);
       throw error;
@@ -447,11 +468,17 @@ export class JobService {
    */
   async getSourceCounts(userId?: string | null): Promise<Record<string, number>> {
     try {
-      const scope = buildUserJobScopeFilter(userId);
+      const where: any = { isActive: true };
+      if (userId) {
+        const personaIds = await getUserPersonaIds(userId);
+        if (personaIds.length === 0) return {};
+        where.scores = { some: { personaId: { in: personaIds } } };
+      }
+
       const sources = await prisma.job.groupBy({
         by: ['source'],
         _count: { source: true },
-        where: { isActive: true, ...scope },
+        where,
       });
 
       const counts: Record<string, number> = {};
