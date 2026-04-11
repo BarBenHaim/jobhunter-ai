@@ -18,7 +18,7 @@ export const profileApi = {
     return data?.data || data
   },
 
-  async uploadCV(file: File): Promise<string> {
+  async uploadCV(file: File): Promise<UserProfile> {
     const formData = new FormData()
     formData.append('file', file)
     const { data } = await apiClient.post('/profile/upload-cv', formData, {
@@ -26,7 +26,7 @@ export const profileApi = {
         'Content-Type': 'multipart/form-data',
       },
     })
-    return (data?.data || data)?.cvId
+    return data?.data || data
   },
 
   async getGaps(personaId: string): Promise<{ gaps: string[] }> {

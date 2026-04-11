@@ -1,14 +1,11 @@
-import { useState, useEffect } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useState, useEffect, useRef } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   FileText,
   Upload,
   Wand2,
-  Edit2,
   AlertCircle,
   Briefcase,
-  BookOpen,
-  Globe,
   GraduationCap,
   Code,
   Shield,
@@ -21,10 +18,29 @@ import {
   Phone,
   Linkedin,
   Github,
+  UploadCloud,
+  FileUp,
+  X,
+  Type,
 } from 'lucide-react'
 import { Card } from '@/components/common/Card'
 import { Badge } from '@/components/common/Badge'
 import { profileApi } from '@/services/profile.api'
+
+type UpdateMode = 'upload' | 'text'
+
+const MAX_CV_SIZE = 8 * 1024 * 1024 // 8 MB — matches server limit
+const ACCEPTED_MIMES = [
+  'application/pdf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+]
+const ACCEPTED_EXT = ['.pdf', '.docx']
+
+const formatBytes = (bytes: number): string => {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
 
 const Profile = () => {
   const queryClient = useQueryClient()
@@ -32,6 +48,13 @@ const Profile = () => {
   const [isProcessing, setIsProcessing] = useState(false)
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  // Upload state
+  const [updateMode, setUpdateMode] = useState<UpdateMode>('upload')
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [isDragging, setIsDragging] = useState(false)
+  const [isUploading, setIsUploading] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Fetch profile using the SAME queryKey as App.tsx to share cache
   const { data: profile, isLoading } = useQuery({
@@ -63,6 +86,77 @@ const Profile = () => {
       setError(err?.message || 'שגיאה בעדכון הפרופיל')
     } finally {
       setIsProcessing(false)
+    }
+  }
+
+  // ─── CV file upload ───────────────────────────────────────
+  const validateFile = (file: File): string | null => {
+    const nameLower = file.name.toLowerCase()
+    const okMime = ACCEPTED_MIMES.includes(file.type)
+    const okExt = ACCEPTED_EXT.some((e) => nameLower.endsWith(e))
+    if (!okMime && !okExt) {
+      return 'סוג קובץ לא נתמך. אפשר רק PDF או DOCX'
+    }
+    if (file.size > MAX_CV_SIZE) {
+      return `הקובץ גדול מדי (מקסימום ${formatBytes(MAX_CV_SIZE)})`
+    }
+    if (file.size === 0) {
+      return 'הקובץ ריק'
+    }
+    return null
+  }
+
+  const pickFile = (file: File | null | undefined) => {
+    setError(null)
+    if (!file) return
+    const validationError = validateFile(file)
+    if (validationError) {
+      setError(validationError)
+      return
+    }
+    setSelectedFile(file)
+  }
+
+  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    pickFile(e.target.files?.[0])
+    // Reset input value so selecting the same file again re-triggers onChange
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragging(false)
+    pickFile(e.dataTransfer.files?.[0])
+  }
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (!isDragging) setIsDragging(true)
+  }
+
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragging(false)
+  }
+
+  const handleUploadCV = async () => {
+    if (!selectedFile) return
+    setIsUploading(true)
+    setError(null)
+    try {
+      await profileApi.uploadCV(selectedFile)
+      queryClient.invalidateQueries({ queryKey: ['profile'] })
+      setSuccessMsg(`קורות החיים הועלו ונותחו בהצלחה (${selectedFile.name})`)
+      setSelectedFile(null)
+      setTimeout(() => setSuccessMsg(null), 4000)
+    } catch (err: any) {
+      const serverMsg = err?.response?.data?.error?.message || err?.response?.data?.message
+      setError(serverMsg || err?.message || 'שגיאה בהעלאת קורות החיים')
+    } finally {
+      setIsUploading(false)
     }
   }
 
@@ -326,40 +420,166 @@ const Profile = () => {
         </Card>
       )}
 
-      {/* Update Profile Section */}
+      {/* Update Profile Section — dual mode: upload CV file or paste text */}
       <Card>
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2" dir="rtl">
-          <Wand2 size={20} className="text-primary-500" />
-          עדכון פרופיל
-        </h2>
-        <p className="text-sm text-gray-600 dark:text-gray-400 mb-3" dir="rtl">
-          הדבק את הרקע המקצועי שלך וה-AI ינתח ויעדכן את הפרופיל
-        </p>
-        <textarea
-          value={rawInput}
-          onChange={(e) => setRawInput(e.target.value)}
-          placeholder="הדבק כאן את קורות החיים או הרקע המקצועי שלך..."
-          className="w-full rounded-xl border border-gray-300 px-4 py-3 dark:border-gray-700 dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
-          rows={6}
-          dir="rtl"
-        />
-        <button
-          onClick={handleSubmitKnowledge}
-          disabled={!rawInput.trim() || isProcessing}
-          className="mt-3 rounded-xl bg-gradient-to-r from-primary-500 to-purple-500 px-6 py-2.5 text-white font-medium hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-        >
-          {isProcessing ? (
-            <>
-              <Loader2 className="animate-spin h-4 w-4" />
-              מעבד...
-            </>
+        <div dir="rtl">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-1 flex items-center gap-2">
+            <Wand2 size={20} className="text-primary-500" />
+            עדכון פרופיל
+          </h2>
+          <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+            העלה קובץ קורות חיים (PDF / DOCX) או הדבק טקסט חופשי — ה-AI ינתח את התוכן ויעדכן את הפרופיל.
+          </p>
+
+          {/* Mode tabs */}
+          <div className="inline-flex rounded-xl bg-gray-100 dark:bg-gray-800 p-1 mb-4">
+            <button
+              type="button"
+              onClick={() => setUpdateMode('upload')}
+              className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                updateMode === 'upload'
+                  ? 'bg-white dark:bg-gray-900 text-primary-600 shadow-sm'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+              }`}
+            >
+              <FileUp size={15} />
+              העלאת קובץ
+            </button>
+            <button
+              type="button"
+              onClick={() => setUpdateMode('text')}
+              className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                updateMode === 'text'
+                  ? 'bg-white dark:bg-gray-900 text-primary-600 shadow-sm'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+              }`}
+            >
+              <Type size={15} />
+              הדבקת טקסט
+            </button>
+          </div>
+
+          {updateMode === 'upload' ? (
+            /* ─── File upload mode ─── */
+            <div className="space-y-3">
+              {!selectedFile ? (
+                <div
+                  onDrop={handleDrop}
+                  onDragOver={handleDragOver}
+                  onDragEnter={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onClick={() => fileInputRef.current?.click()}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      fileInputRef.current?.click()
+                    }
+                  }}
+                  className={`relative cursor-pointer rounded-xl border-2 border-dashed px-6 py-10 text-center transition-all ${
+                    isDragging
+                      ? 'border-primary-500 bg-primary-50 dark:bg-primary-500/10 scale-[1.01]'
+                      : 'border-gray-300 dark:border-gray-700 hover:border-primary-400 hover:bg-gray-50 dark:hover:bg-gray-800/50'
+                  }`}
+                >
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    onChange={handleFileInput}
+                    className="hidden"
+                  />
+                  <div className="flex flex-col items-center gap-2">
+                    <div className={`h-12 w-12 rounded-full flex items-center justify-center transition-colors ${
+                      isDragging
+                        ? 'bg-primary-500 text-white'
+                        : 'bg-primary-50 dark:bg-primary-500/10 text-primary-500'
+                    }`}>
+                      <UploadCloud size={24} />
+                    </div>
+                    <p className="text-sm font-medium text-gray-900 dark:text-white mt-1">
+                      {isDragging ? 'שחרר כדי להעלות' : 'לחץ להעלאה או גרור קובץ לכאן'}
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      PDF או DOCX · עד {formatBytes(MAX_CV_SIZE)}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-4 flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-lg bg-primary-100 dark:bg-primary-500/20 flex items-center justify-center text-primary-600 flex-shrink-0">
+                    <FileText size={20} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                      {selectedFile.name}
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      {formatBytes(selectedFile.size)}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedFile(null)}
+                    disabled={isUploading}
+                    className="h-8 w-8 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 flex items-center justify-center text-gray-500 disabled:opacity-50"
+                    aria-label="הסר קובץ"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              )}
+
+              <button
+                onClick={handleUploadCV}
+                disabled={!selectedFile || isUploading}
+                className="rounded-xl bg-gradient-to-r from-primary-500 to-purple-500 px-6 py-2.5 text-white font-medium hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {isUploading ? (
+                  <>
+                    <Loader2 className="animate-spin h-4 w-4" />
+                    מעלה ומנתח...
+                  </>
+                ) : (
+                  <>
+                    <Upload size={16} />
+                    העלה ונתח
+                  </>
+                )}
+              </button>
+            </div>
           ) : (
-            <>
-              <Wand2 size={16} />
-              עדכן עם AI
-            </>
+            /* ─── Text paste mode ─── */
+            <div>
+              <textarea
+                value={rawInput}
+                onChange={(e) => setRawInput(e.target.value)}
+                placeholder="הדבק כאן את קורות החיים או הרקע המקצועי שלך..."
+                className="w-full rounded-xl border border-gray-300 px-4 py-3 dark:border-gray-700 dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+                rows={6}
+                dir="rtl"
+              />
+              <button
+                onClick={handleSubmitKnowledge}
+                disabled={!rawInput.trim() || isProcessing}
+                className="mt-3 rounded-xl bg-gradient-to-r from-primary-500 to-purple-500 px-6 py-2.5 text-white font-medium hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {isProcessing ? (
+                  <>
+                    <Loader2 className="animate-spin h-4 w-4" />
+                    מעבד...
+                  </>
+                ) : (
+                  <>
+                    <Wand2 size={16} />
+                    עדכן עם AI
+                  </>
+                )}
+              </button>
+            </div>
           )}
-        </button>
+        </div>
       </Card>
 
       {/* Empty state if no structured data at all */}

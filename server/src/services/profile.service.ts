@@ -145,23 +145,33 @@ export class ProfileService {
     }
   }
 
-  async uploadCV(userId: string, filePath: string) {
+  async uploadCV(userId: string, filePath: string, fileType?: 'pdf' | 'docx') {
     try {
-      logger.info(`Uploading CV for user: ${userId}`, { filePath });
+      logger.info(`Uploading CV for user: ${userId}`, { filePath, fileType });
 
-      if (!fs.existsSync(filePath)) {
+      const fileExists = await fs.stat(filePath).then(() => true).catch(() => false);
+      if (!fileExists) {
         throw new ValidationError(`File not found: ${filePath}`);
       }
 
-      const extension = path.extname(filePath).toLowerCase();
-      let extractedText = '';
+      // Prefer the explicit fileType hint (set by the route based on mimetype)
+      // and fall back to path.extname for legacy callers.
+      const kind: 'pdf' | 'docx' | null =
+        fileType === 'pdf' || fileType === 'docx'
+          ? fileType
+          : path.extname(filePath).toLowerCase() === '.pdf'
+            ? 'pdf'
+            : path.extname(filePath).toLowerCase() === '.docx'
+              ? 'docx'
+              : null;
 
-      if (extension === '.docx') {
-        const fileBuffer = await fs.readFile(filePath);
+      let extractedText = '';
+      const fileBuffer = await fs.readFile(filePath);
+
+      if (kind === 'docx') {
         const result = await mammoth.extractRawText({ buffer: fileBuffer });
         extractedText = result.value;
-      } else if (extension === '.pdf') {
-        const fileBuffer = await fs.readFile(filePath);
+      } else if (kind === 'pdf') {
         const pdfData = await pdfParse(fileBuffer);
         extractedText = pdfData.text;
       } else {

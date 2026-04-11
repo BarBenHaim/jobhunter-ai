@@ -7,7 +7,12 @@ import { profileService } from '../services/profile.service';
 import logger from '../utils/logger';
 
 const router = Router();
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 8 * 1024 * 1024, // 8 MB — CVs are tiny, anything bigger is suspicious
+  },
+});
 
 router.use(authMiddleware);
 
@@ -109,8 +114,21 @@ router.post(
       return;
     }
 
-    const allowedMimes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
-    if (!allowedMimes.includes(req.file.mimetype)) {
+    // Detect file kind from mimetype (preferred) and fall back to filename
+    // extension, since some browsers send octet-stream for .docx.
+    const mime = req.file.mimetype;
+    const nameLower = (req.file.originalname || '').toLowerCase();
+    let fileType: 'pdf' | 'docx' | null = null;
+    if (mime === 'application/pdf' || nameLower.endsWith('.pdf')) {
+      fileType = 'pdf';
+    } else if (
+      mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+      nameLower.endsWith('.docx')
+    ) {
+      fileType = 'docx';
+    }
+
+    if (!fileType) {
       res.status(400).json({
         success: false,
         error: {
@@ -121,13 +139,14 @@ router.post(
       return;
     }
 
-    // Save file temporarily
-    const tempPath = `/tmp/${Date.now()}_${req.file.originalname}`;
+    // Save file temporarily with a safe name (no user-controlled path segments)
+    const ext = fileType === 'pdf' ? '.pdf' : '.docx';
+    const tempPath = `/tmp/cv_${req.userId}_${Date.now()}${ext}`;
     const fs = await import('fs/promises');
     await fs.writeFile(tempPath, req.file.buffer);
 
     try {
-      const profile = await profileService.uploadCV(req.userId!, tempPath);
+      const profile = await profileService.uploadCV(req.userId!, tempPath, fileType);
       res.status(201).json({
         success: true,
         data: profile,
