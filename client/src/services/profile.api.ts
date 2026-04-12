@@ -38,4 +38,43 @@ export const profileApi = {
     const { data } = await apiClient.get(`/profile/gaps/${personaId}`)
     return data?.data || data
   },
+
+  // ─── CV Library ──────────────────────────────────
+  async getCVLibrary(): Promise<UploadedCV[]> {
+    const { data } = await apiClient.get('/profile/cv-library')
+    return data?.data || data
+  },
+
+  async uploadCVToLibrary(file: File, label?: string): Promise<UploadedCV> {
+    const formData = new FormData()
+    formData.append('file', file)
+    if (label) formData.append('label', label)
+    const { data } = await apiClient.post('/profile/cv-library', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return data?.data || data
+  },
+
+  async updateCVInLibrary(id: string, updates: Partial<{ label: string; roleType: string; isDefault: boolean }>): Promise<UploadedCV> {
+    const { data } = await apiClient.patch(`/profile/cv-library/${id}`, updates)
+    return data?.data || data
+  },
+
+  async deleteCVFromLibrary(id: string): Promise<void> {
+    await apiClient.delete(`/profile/cv-library/${id}`)
+  },
+}
+
+export interface UploadedCV {
+  id: string
+  fileName: string
+  fileSize: number
+  mimeType: string
+  roleType: string
+  roleTypeAutoDetected: boolean
+  label: string | null
+  extractedSkills: string[]
+  isDefault: boolean
+  parsedAt: string | null
+  createdAt: string
 }

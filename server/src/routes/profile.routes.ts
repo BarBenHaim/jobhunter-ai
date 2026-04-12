@@ -4,6 +4,7 @@ import multer from 'multer';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
 import { profileService } from '../services/profile.service';
+import { cvLibraryService } from '../services/cv-library.service';
 import prisma from '../db/prisma';
 import logger from '../utils/logger';
 
@@ -206,6 +207,56 @@ router.get(
       success: true,
       data: gapsData,
     });
+  })
+);
+
+// ─── CV Library endpoints ──────────────────────────────────
+
+// GET /api/profile/cv-library — list uploaded CVs
+router.get(
+  '/cv-library',
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const cvs = await cvLibraryService.getUserCVs(req.userId!);
+    res.json({ success: true, data: cvs });
+  })
+);
+
+// POST /api/profile/cv-library — upload a new CV (multipart)
+router.post(
+  '/cv-library',
+  upload.single('file'),
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    if (!req.file) {
+      res.status(400).json({ success: false, error: { message: 'לא נבחר קובץ' } });
+      return;
+    }
+    const label = req.body?.label || undefined;
+    const cv = await cvLibraryService.uploadCV(
+      req.userId!,
+      req.file.buffer,
+      req.file.originalname,
+      req.file.mimetype,
+      label
+    );
+    res.status(201).json({ success: true, data: cv });
+  })
+);
+
+// PATCH /api/profile/cv-library/:id — update label, role type, default
+router.patch(
+  '/cv-library/:id',
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const cv = await cvLibraryService.updateCV(req.userId!, req.params.id, req.body);
+    res.json({ success: true, data: cv });
+  })
+);
+
+// DELETE /api/profile/cv-library/:id — delete a CV
+router.delete(
+  '/cv-library/:id',
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    await cvLibraryService.deleteCV(req.userId!, req.params.id);
+    res.json({ success: true });
   })
 );
 

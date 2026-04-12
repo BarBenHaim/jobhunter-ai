@@ -93,6 +93,7 @@ model UserProfile {
   personas              Persona[]
   analyticsEvents       AnalyticsEvent[]
   autopilotRuns         AutoPilotRun[]
+  uploadedCVs           UploadedCV[]
 
   @@map("user_profiles")
 }
@@ -338,4 +339,46 @@ model ScoringRule {
 
   @@index([personaId])
   @@map("scoring_rules")
+}
+
+enum CVRoleType {
+  FRONTEND
+  BACKEND
+  FULLSTACK
+  DEVOPS
+  DATA
+  MOBILE
+  QA
+  MANAGEMENT
+  GENERAL
+}
+
+model UploadedCV {
+  id                 String     @id @default(cuid())
+  userId             String
+  user               UserProfile @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  fileName           String
+  filePath           String
+  fileSize           Int
+  mimeType           String     @default("application/pdf")
+
+  // Role tagging
+  roleType           CVRoleType @default(GENERAL)
+  roleTypeAutoDetected Boolean  @default(true)
+  label              String?    // User-friendly label, e.g. "הCV שלי ל-Frontend"
+
+  // Extracted content
+  extractedText      String?    @db.Text
+  extractedSkills    String[]
+  extractedProfile   Json?      @default("{}")
+  parsedAt           DateTime?
+
+  isDefault          Boolean    @default(false)
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+
+  @@index([userId])
+  @@index([userId, roleType])
+  @@map("uploaded_cvs")
 }

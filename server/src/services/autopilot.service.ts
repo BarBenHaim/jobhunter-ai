@@ -5,6 +5,7 @@ import { lightweightScraperService } from './lightweight-scraper.service';
 import { personaService } from './persona.service';
 import { profileService } from './profile.service';
 import { cvGenerationQueue } from '../queue';
+import { cvLibraryService } from './cv-library.service';
 
 // ─── Default AutoPilot config ─────────────────────────────
 export interface AutoPilotConfig {
@@ -353,7 +354,13 @@ export async function runAutoPilot(
       scoring: { avg: avgScore, max: maxScore, above50, above40, belowMinScore, blacklisted, minScore: config.minScore },
     }, qualifyingJobs.length > 0 ? 'SUCCESS' : 'WARNING');
 
-    // 8. Process qualifying jobs — generate CVs and route
+    // 8. Load user's CV library for smart matching
+    const userCVs = await (prisma as any).uploadedCV.findMany({
+      where: { userId },
+      select: { id: true, roleType: true, extractedSkills: true, isDefault: true, filePath: true, label: true },
+    });
+
+    // 9. Process qualifying jobs — generate CVs and route
     const remainingSlots = Math.min(config.maxPerRun, config.maxPerDay - dailyCheck.used);
     const jobsToProcess = qualifyingJobs
       .sort((a, b) => b.score.score - a.score.score)
@@ -386,13 +393,19 @@ export async function runAutoPilot(
           },
         });
 
-        // Queue CV generation
+        // Select best CV from library for this job
+        const selectedCV = userCVs.length > 0
+          ? cvLibraryService.selectBestCVForJob(userCVs, job.title || '', job.description || '')
+          : null;
+
+        // Queue CV generation (with base CV info if available)
         try {
           await cvGenerationQueue.add({
             applicationId: application.id,
             userId,
             personaId: persona.id,
             jobId: job.id,
+            ...(selectedCV ? { baseCVId: selectedCV.cvId, baseCVPath: selectedCV.filePath } : {}),
           }, { priority: isAutoApply ? 5 : 8 });
           cvsGenerated++;
         } catch (cvErr) {
@@ -401,8 +414,10 @@ export async function runAutoPilot(
 
         if (isAutoApply) {
           autoSubmitted++;
-          await logEvent(userId, run.id, 'AUTO_SUBMITTED', `הוגש אוטומטית ל-${job.title} ב-${job.company} (${score.score}%)`, {
+          const cvNote = selectedCV ? ` | CV: ${selectedCV.label} (${selectedCV.matchReason})` : '';
+          await logEvent(userId, run.id, 'AUTO_SUBMITTED', `הוגש אוטומטית ל-${job.title} ב-${job.company} (${score.score}%)${cvNote}`, {
             applicationId: application.id, jobId: job.id, score: score.score,
+            selectedCV: selectedCV ? { id: selectedCV.cvId, reason: selectedCV.matchReason } : null,
           }, 'SUCCESS');
         } else {
           queued++;

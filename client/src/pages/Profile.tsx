@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   FileText,
   Upload,
@@ -25,10 +25,13 @@ import {
   Pencil,
   Plus,
   Save,
+  Trash2,
+  Star,
+  FolderOpen,
 } from 'lucide-react'
 import { Card } from '@/components/common/Card'
 import { Badge } from '@/components/common/Badge'
-import { profileApi } from '@/services/profile.api'
+import { profileApi, UploadedCV } from '@/services/profile.api'
 
 type UpdateMode = 'upload' | 'text'
 
@@ -560,6 +563,9 @@ const Profile = () => {
         </Card>
       )}
 
+      {/* ═══════ CV Library ═══════ */}
+      <CVLibrarySection />
+
       {/* Update Profile Section — dual mode: upload CV file or paste text */}
       <Card>
         <div dir="rtl">
@@ -730,6 +736,242 @@ const Profile = () => {
         </div>
       )}
     </div>
+  )
+}
+
+// ─── CV Library Sub-component ────────────────────────────
+
+const ROLE_LABELS: Record<string, string> = {
+  FRONTEND: 'Frontend',
+  BACKEND: 'Backend',
+  FULLSTACK: 'Fullstack',
+  DEVOPS: 'DevOps',
+  DATA: 'Data',
+  MOBILE: 'Mobile',
+  QA: 'QA',
+  MANAGEMENT: 'Management',
+  GENERAL: 'כללי',
+}
+
+const ROLE_COLORS: Record<string, string> = {
+  FRONTEND: '#3b82f6',
+  BACKEND: '#10b981',
+  FULLSTACK: '#8b5cf6',
+  DEVOPS: '#f59e0b',
+  DATA: '#ec4899',
+  MOBILE: '#06b6d4',
+  QA: '#f97316',
+  MANAGEMENT: '#6366f1',
+  GENERAL: '#6b7280',
+}
+
+function CVLibrarySection() {
+  const queryClient = useQueryClient()
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [isUploading, setIsUploading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const { data: cvs = [], isLoading } = useQuery({
+    queryKey: ['cv-library'],
+    queryFn: () => profileApi.getCVLibrary(),
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => profileApi.deleteCVFromLibrary(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['cv-library'] })
+      queryClient.invalidateQueries({ queryKey: ['profile'] })
+    },
+  })
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, updates }: { id: string; updates: Partial<{ label: string; roleType: string; isDefault: boolean }> }) =>
+      profileApi.updateCVInLibrary(id, updates),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['cv-library'] }),
+  })
+
+  const handleUpload = async (file: File) => {
+    if (cvs.length >= 3) {
+      setError('ניתן להעלות עד 3 קורות חיים. מחק קובץ קיים לפני העלאת חדש.')
+      return
+    }
+    const ext = file.name.toLowerCase()
+    if (!ext.endsWith('.pdf') && !ext.endsWith('.docx')) {
+      setError('רק קבצי PDF ו-DOCX נתמכים')
+      return
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      setError('גודל קובץ מקסימלי: 8MB')
+      return
+    }
+
+    setIsUploading(true)
+    setError(null)
+    try {
+      await profileApi.uploadCVToLibrary(file)
+      queryClient.invalidateQueries({ queryKey: ['cv-library'] })
+      queryClient.invalidateQueries({ queryKey: ['profile'] })
+    } catch (err: any) {
+      setError(err?.response?.data?.error?.message || err.message || 'שגיאה בהעלאה')
+    } finally {
+      setIsUploading(false)
+    }
+  }
+
+  const formatSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  }
+
+  return (
+    <Card>
+      <div dir="rtl">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+            <FolderOpen size={20} className="text-primary-500" />
+            ספריית קורות חיים
+          </h2>
+          <span className="text-xs text-gray-400">{cvs.length}/3</span>
+        </div>
+
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+          העלה עד 3 קורות חיים שונים (לכל סוג תפקיד). המערכת תזהה אוטומטית את סוג התפקיד ותבחר את ה-CV המתאים ביותר בזמן הגשה.
+        </p>
+
+        {error && (
+          <div className="mb-3 p-3 rounded-lg bg-red-50 text-red-700 text-sm flex items-center gap-2">
+            <AlertCircle size={14} /> {error}
+            <button onClick={() => setError(null)} className="mr-auto"><X size={14} /></button>
+          </div>
+        )}
+
+        {/* Uploaded CVs list */}
+        {isLoading ? (
+          <div className="flex items-center justify-center py-6">
+            <Loader2 size={20} className="animate-spin text-gray-400" />
+          </div>
+        ) : (
+          <div className="space-y-3 mb-4">
+            {cvs.map((cv: UploadedCV) => (
+              <div
+                key={cv.id}
+                className="flex items-center gap-3 p-3 rounded-xl border transition-all"
+                style={{
+                  borderColor: cv.isDefault ? ROLE_COLORS[cv.roleType] + '60' : '#e5e7eb',
+                  background: cv.isDefault ? ROLE_COLORS[cv.roleType] + '08' : 'white',
+                }}
+              >
+                {/* File icon */}
+                <div
+                  className="h-10 w-10 rounded-lg flex items-center justify-center flex-shrink-0"
+                  style={{ background: ROLE_COLORS[cv.roleType] + '15' }}
+                >
+                  <FileText size={18} style={{ color: ROLE_COLORS[cv.roleType] }} />
+                </div>
+
+                {/* Info */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                      {cv.label || cv.fileName}
+                    </span>
+                    {cv.isDefault && (
+                      <Star size={12} className="text-yellow-500 fill-yellow-500 flex-shrink-0" />
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    {/* Role type badge */}
+                    <span
+                      className="text-[10px] font-semibold px-1.5 py-0.5 rounded"
+                      style={{
+                        background: ROLE_COLORS[cv.roleType] + '20',
+                        color: ROLE_COLORS[cv.roleType],
+                      }}
+                    >
+                      {ROLE_LABELS[cv.roleType] || cv.roleType}
+                      {cv.roleTypeAutoDetected && ' (אוטו)'}
+                    </span>
+                    <span className="text-[11px] text-gray-400">{formatSize(cv.fileSize)}</span>
+                    {cv.extractedSkills?.length > 0 && (
+                      <span className="text-[11px] text-gray-400">{cv.extractedSkills.length} כישורים</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  {/* Role type selector */}
+                  <select
+                    value={cv.roleType}
+                    onChange={(e) => updateMutation.mutate({ id: cv.id, updates: { roleType: e.target.value } })}
+                    className="text-[11px] border rounded px-1 py-0.5 bg-white text-gray-600"
+                    title="שנה סוג תפקיד"
+                  >
+                    {Object.entries(ROLE_LABELS).map(([key, label]) => (
+                      <option key={key} value={key}>{label}</option>
+                    ))}
+                  </select>
+
+                  {!cv.isDefault && (
+                    <button
+                      onClick={() => updateMutation.mutate({ id: cv.id, updates: { isDefault: true } })}
+                      className="p-1.5 rounded-lg text-gray-400 hover:text-yellow-500 hover:bg-yellow-50 transition-colors"
+                      title="הגדר כברירת מחדל"
+                    >
+                      <Star size={14} />
+                    </button>
+                  )}
+                  <button
+                    onClick={() => {
+                      if (confirm('למחוק את קורות החיים האלה?')) deleteMutation.mutate(cv.id)
+                    }}
+                    className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                    title="מחק"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Upload area */}
+        {cvs.length < 3 && (
+          <div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf,.docx"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (file) handleUpload(file)
+                e.target.value = ''
+              }}
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isUploading}
+              className="w-full flex items-center justify-center gap-2 p-4 rounded-xl border-2 border-dashed border-gray-300 hover:border-primary-400 hover:bg-primary-50/50 text-gray-500 hover:text-primary-600 transition-all disabled:opacity-50"
+            >
+              {isUploading ? (
+                <>
+                  <Loader2 size={18} className="animate-spin" />
+                  <span className="text-sm font-medium">מעלה ומנתח...</span>
+                </>
+              ) : (
+                <>
+                  <Upload size={18} />
+                  <span className="text-sm font-medium">העלה קורות חיים (PDF / DOCX)</span>
+                </>
+              )}
+            </button>
+          </div>
+        )}
+      </div>
+    </Card>
   )
 }
 
