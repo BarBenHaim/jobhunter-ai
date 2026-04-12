@@ -4,6 +4,7 @@ import multer from 'multer';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
 import { profileService } from '../services/profile.service';
+import prisma from '../db/prisma';
 import logger from '../utils/logger';
 
 const router = Router();
@@ -60,6 +61,39 @@ router.patch(
       success: true,
       data: updatedProfile,
     });
+  })
+);
+
+// PATCH /api/profile/skills - Update skills in structuredProfile
+router.patch(
+  '/skills',
+  [body('skills').isArray()],
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      res.status(400).json({
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: 'skills must be an array', details: errors.array() },
+      });
+      return;
+    }
+
+    const userId = req.userId!;
+    const profile = await profileService.getProfile(userId);
+    const existing = typeof profile.structuredProfile === 'object' ? profile.structuredProfile as any : {};
+
+    // Accept flat array of skill strings — rebuild the skills field
+    const updatedProfile = await prisma.userProfile.update({
+      where: { id: userId },
+      data: {
+        structuredProfile: {
+          ...existing,
+          skills: req.body.skills,
+        },
+      },
+    });
+
+    res.status(200).json({ success: true, data: updatedProfile });
   })
 );
 

@@ -22,6 +22,9 @@ import {
   FileUp,
   X,
   Type,
+  Pencil,
+  Plus,
+  Save,
 } from 'lucide-react'
 import { Card } from '@/components/common/Card'
 import { Badge } from '@/components/common/Badge'
@@ -48,6 +51,12 @@ const Profile = () => {
   const [isProcessing, setIsProcessing] = useState(false)
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  // Skills editing state
+  const [isEditingSkills, setIsEditingSkills] = useState(false)
+  const [editedSkills, setEditedSkills] = useState<string[]>([])
+  const [newSkillInput, setNewSkillInput] = useState('')
+  const [isSavingSkills, setIsSavingSkills] = useState(false)
 
   // Upload state
   const [updateMode, setUpdateMode] = useState<UpdateMode>('upload')
@@ -160,6 +169,56 @@ const Profile = () => {
     }
   }
 
+  // ─── Skills editing handlers ────────────────────────────
+  const startEditingSkills = () => {
+    setEditedSkills([...getSkillsList()])
+    setIsEditingSkills(true)
+    setNewSkillInput('')
+  }
+
+  const cancelEditingSkills = () => {
+    setIsEditingSkills(false)
+    setEditedSkills([])
+    setNewSkillInput('')
+  }
+
+  const removeSkill = (skillToRemove: string) => {
+    setEditedSkills(prev => prev.filter(s => s !== skillToRemove))
+  }
+
+  const addSkill = () => {
+    const trimmed = newSkillInput.trim()
+    if (!trimmed) return
+    if (editedSkills.some(s => s.toLowerCase() === trimmed.toLowerCase())) {
+      return // Duplicate
+    }
+    setEditedSkills(prev => [...prev, trimmed])
+    setNewSkillInput('')
+  }
+
+  const handleAddSkillKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      addSkill()
+    }
+  }
+
+  const saveSkills = async () => {
+    setIsSavingSkills(true)
+    setError(null)
+    try {
+      await profileApi.updateSkills(editedSkills)
+      queryClient.invalidateQueries({ queryKey: ['profile'] })
+      setIsEditingSkills(false)
+      setSuccessMsg('הסקילים עודכנו בהצלחה!')
+      setTimeout(() => setSuccessMsg(null), 3000)
+    } catch (err: any) {
+      setError(err?.message || 'שגיאה בעדכון הסקילים')
+    } finally {
+      setIsSavingSkills(false)
+    }
+  }
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -260,38 +319,119 @@ const Profile = () => {
       )}
 
       {/* Skills Section */}
-      {skillsList.length > 0 && (
+      {(skillsList.length > 0 || isEditingSkills) && (
         <Card>
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-            <Code size={20} className="text-primary-500" />
-            Technical Skills
-          </h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+              <Code size={20} className="text-primary-500" />
+              Technical Skills
+            </h2>
+            {!isEditingSkills ? (
+              <button
+                onClick={startEditingSkills}
+                className="flex items-center gap-1.5 text-sm text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 font-medium transition-colors"
+              >
+                <Pencil size={14} />
+                ערוך
+              </button>
+            ) : (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={cancelEditingSkills}
+                  disabled={isSavingSkills}
+                  className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 font-medium transition-colors disabled:opacity-50"
+                >
+                  <X size={14} />
+                  ביטול
+                </button>
+                <button
+                  onClick={saveSkills}
+                  disabled={isSavingSkills}
+                  className="flex items-center gap-1.5 text-sm bg-primary-500 hover:bg-primary-600 text-white px-3 py-1.5 rounded-lg font-medium transition-colors disabled:opacity-50"
+                >
+                  {isSavingSkills ? (
+                    <Loader2 className="animate-spin h-3.5 w-3.5" />
+                  ) : (
+                    <Save size={14} />
+                  )}
+                  שמור
+                </button>
+              </div>
+            )}
+          </div>
 
-          {typeof sp?.skills === 'object' && !Array.isArray(sp.skills) ? (
-            // Categorized skills
-            <div className="space-y-3">
-              {Object.entries(sp.skills).map(([category, skills]: [string, any]) => (
-                Array.isArray(skills) && skills.length > 0 && (
-                  <div key={category}>
-                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300 capitalize mb-1.5">
-                      {category.replace(/([A-Z])/g, ' $1').trim()}
-                    </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {skills.map((skill: string) => (
-                        <Badge key={skill} variant="primary" size="sm">{skill}</Badge>
-                      ))}
-                    </div>
-                  </div>
-                )
-              ))}
+          {isEditingSkills ? (
+            /* ─── Edit mode ─── */
+            <div className="space-y-3" dir="rtl">
+              <div className="flex flex-wrap gap-2">
+                {editedSkills.map((skill) => (
+                  <span
+                    key={skill}
+                    className="inline-flex items-center gap-1 bg-primary-50 dark:bg-primary-500/10 text-primary-700 dark:text-primary-300 border border-primary-200 dark:border-primary-500/30 rounded-lg px-2.5 py-1 text-sm font-medium"
+                  >
+                    {skill}
+                    <button
+                      onClick={() => removeSkill(skill)}
+                      className="h-4 w-4 rounded-full hover:bg-primary-200 dark:hover:bg-primary-500/30 flex items-center justify-center transition-colors mr-0.5"
+                      aria-label={`הסר ${skill}`}
+                    >
+                      <X size={12} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+
+              {/* Add new skill */}
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newSkillInput}
+                  onChange={(e) => setNewSkillInput(e.target.value)}
+                  onKeyDown={handleAddSkillKeyDown}
+                  placeholder="הוסף סקיל חדש..."
+                  className="flex-1 rounded-lg border border-gray-300 dark:border-gray-700 dark:bg-gray-900 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                />
+                <button
+                  onClick={addSkill}
+                  disabled={!newSkillInput.trim()}
+                  className="flex items-center gap-1 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-40"
+                >
+                  <Plus size={14} />
+                  הוסף
+                </button>
+              </div>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                לחץ על ה-X ליד סקיל כדי להסיר אותו, או הקלד שם של סקיל חדש ולחץ Enter.
+              </p>
             </div>
           ) : (
-            // Flat skills list
-            <div className="flex flex-wrap gap-2">
-              {skillsList.map((skill) => (
-                <Badge key={skill} variant="primary" size="sm">{skill}</Badge>
-              ))}
-            </div>
+            /* ─── Read mode ─── */
+            <>
+              {typeof sp?.skills === 'object' && !Array.isArray(sp.skills) ? (
+                <div className="space-y-3">
+                  {Object.entries(sp.skills).map(([category, skills]: [string, any]) => (
+                    Array.isArray(skills) && skills.length > 0 && (
+                      <div key={category}>
+                        <p className="text-sm font-medium text-gray-700 dark:text-gray-300 capitalize mb-1.5">
+                          {category.replace(/([A-Z])/g, ' $1').trim()}
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {skills.map((skill: string) => (
+                            <Badge key={skill} variant="primary" size="sm">{skill}</Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  ))}
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {skillsList.map((skill) => (
+                    <Badge key={skill} variant="primary" size="sm">{skill}</Badge>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </Card>
       )}

@@ -29,6 +29,11 @@ export const profileApi = {
     return data?.data || data
   },
 
+  async updateSkills(skills: string[]): Promise<UserProfile> {
+    const { data } = await apiClient.patch('/profile/skills', { skills })
+    return data?.data || data
+  },
+
   async getGaps(personaId: string): Promise<{ gaps: string[] }> {
     const { data } = await apiClient.get(`/profile/gaps/${personaId}`)
     return data?.data || data

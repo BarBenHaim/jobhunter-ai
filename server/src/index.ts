@@ -28,6 +28,7 @@ import scrapeRoutes from './routes/scrape.routes';
 import intelligenceRoutes from './routes/intelligence.routes';
 import discoveryRoutes from './routes/discovery.routes';
 import costsRoutes from './routes/costs.routes';
+import dashboardRoutes from './routes/dashboard.routes';
 
 dotenv.config();
 
@@ -125,6 +126,7 @@ app.use('/api/scrape', scrapeRoutes);
 app.use('/api/intelligence', intelligenceRoutes);
 app.use('/api/discovery', discoveryRoutes);
 app.use('/api/costs', costsRoutes);
+app.use('/api/dashboard', dashboardRoutes);
 
 app.use((req: Request, res: Response) => {
   res.status(404).json({
