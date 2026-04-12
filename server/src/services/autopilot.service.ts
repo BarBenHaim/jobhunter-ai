@@ -47,15 +47,32 @@ export const DEFAULT_AUTOPILOT_CONFIG: AutoPilotConfig = {
 };
 
 // ─── Tech relevance filter (copied from scrape routes) ─────
-const IRRELEVANT_TITLE_KEYWORDS = [
-  'nurse', 'doctor', 'teacher', 'chef', 'driver', 'accountant',
-  'lawyer', 'pharmacist', 'mechanic', 'electrician', 'plumber',
-  'אחות', 'רופא', 'מורה', 'שף', 'נהג', 'רואה חשבון', 'עורך דין',
+// Word-boundary blacklist — only rejects jobs that are clearly non-tech
+const IRRELEVANT_TITLE_PATTERNS = [
+  /\bnurse\b/i, /\bnursing\b/i, /\bdoctor\b/i, /\bphysician\b/i,
+  /\bteacher\b/i, /\bchef\b/i, /\bdriver\b/i, /\baccountant\b/i,
+  /\blawyer\b/i, /\bpharmacist\b/i, /\bmechanic\b/i, /\bplumber\b/i,
+  /\bאחות\b/, /\bרופא\b/, /\bמורה\b/, /\bשף\b/, /\bנהג\b/,
+  /רואה חשבון/, /עורך דין/, /\bסיעוד\b/,
+];
+
+// Positive tech signals — if ANY match, the job is relevant regardless of blacklist
+const TECH_POSITIVE_SIGNALS = [
+  /develop/i, /engineer/i, /software/i, /fullstack/i, /frontend/i, /backend/i,
+  /devops/i, /data\s*(scientist|engineer|analyst)/i, /machine\s*learning/i,
+  /\bQA\b/i, /\bSRE\b/i, /architect/i, /\bIT\b/i, /cyber/i, /cloud/i,
+  /מפתח/i, /תוכנה/i, /פיתוח/i, /הנדס/i, /בודק/i, /אוטומציה/i, /סייבר/i,
+  /react/i, /node/i, /python/i, /java/i, /typescript/i, /\.net/i, /c#/i,
+  /aws/i, /azure/i, /kubernetes/i, /docker/i, /linux/i, /sql/i, /mongodb/i,
+  /product\s*manager/i, /scrum/i, /agile/i, /\bpm\b/i, /\bux\b/i, /\bui\b/i,
 ];
 
 function isTechRelevant(title: string): boolean {
-  const lower = (title || '').toLowerCase();
-  return !IRRELEVANT_TITLE_KEYWORDS.some(kw => lower.includes(kw));
+  const t = title || '';
+  // If it has any positive tech signal, always relevant
+  if (TECH_POSITIVE_SIGNALS.some(p => p.test(t))) return true;
+  // Otherwise, reject only if clearly non-tech
+  return !IRRELEVANT_TITLE_PATTERNS.some(p => p.test(t));
 }
 
 // ─── Seniority filter for juniors ─────────────────────────
@@ -215,23 +232,59 @@ export async function runAutoPilot(
       }
     }
 
-    // 6. Filter
+    // 6. Filter — only remove obviously non-tech jobs
+    const techFilterBefore = allJobs.length;
     let relevantJobs = allJobs.filter(j => isTechRelevant(j.title));
+    const techFilterRemoved = techFilterBefore - relevantJobs.length;
 
     // Profile analysis for scoring
     const profileAnalysis = analyzeProfileForScoring(structuredProfile, rawKnowledge, preferences);
     const isStudentOrJunior = profileAnalysis.seniorityLevel === 'JUNIOR' && profileAnalysis.experienceYears <= 2;
 
+    // ═══ DIAGNOSTIC: Profile Analysis ═══
+    const profileDiag = {
+      coreSkills: profileAnalysis.coreSkills.length,
+      inferredSkills: profileAnalysis.inferredSkills.length,
+      techStack: profileAnalysis.techStack.length,
+      languages: profileAnalysis.languages.length,
+      experienceYears: profileAnalysis.experienceYears,
+      seniority: profileAnalysis.seniorityLevel,
+      domains: profileAnalysis.domains.length,
+      previousRoles: profileAnalysis.previousRoles.length,
+      allSkillsSample: [
+        ...profileAnalysis.coreSkills.slice(0, 5),
+        ...profileAnalysis.inferredSkills.slice(0, 3),
+        ...profileAnalysis.techStack.slice(0, 3),
+      ],
+    };
+    logger.info(`[AutoPilot] Profile analysis:`, profileDiag);
+
+    // WARN if profile is empty
+    const totalSkills = profileAnalysis.coreSkills.length + profileAnalysis.inferredSkills.length + profileAnalysis.techStack.length;
+    if (totalSkills === 0) {
+      await logEvent(userId, run.id, 'PROFILE_WARNING',
+        `⚠️ הפרופיל שלך ריק — לא נמצאו כישורים. העלה קורות חיים או הוסף מידע מקצועי בפרופיל כדי לשפר התאמות.`,
+        profileDiag, 'WARNING');
+    } else {
+      await logEvent(userId, run.id, 'PROFILE_ANALYZED',
+        `פרופיל נטען: ${totalSkills} כישורים, ${profileAnalysis.experienceYears} שנות ניסיון, רמה: ${profileAnalysis.seniorityLevel}`,
+        profileDiag, 'INFO');
+    }
+
     if (isStudentOrJunior) {
+      const beforeSeniority = relevantJobs.length;
       relevantJobs = relevantJobs.filter(job => {
         const title = (job.title || '').toLowerCase();
         if (/junior|student|intern|סטודנט|ג'וניור|התמחות|entry/i.test(title)) return true;
         return !SENIOR_TITLE_PATTERNS.some(p => p.test(job.title || ''));
       });
+      logger.info(`[AutoPilot] Seniority filter: ${beforeSeniority} → ${relevantJobs.length} (removed ${beforeSeniority - relevantJobs.length} senior jobs)`);
     }
 
     await (prisma as any).autoPilotRun.update({ where: { id: run.id }, data: { jobsDiscovered: relevantJobs.length } });
-    await logEvent(userId, run.id, 'JOBS_DISCOVERED', `נמצאו ${relevantJobs.length} משרות חדשות מ-${Object.keys(sourceBreakdown).length} מקורות`, { total: relevantJobs.length, sourceBreakdown }, 'SUCCESS');
+    await logEvent(userId, run.id, 'JOBS_DISCOVERED',
+      `נמצאו ${relevantJobs.length} משרות (מתוך ${allJobs.length} סה"כ, ${techFilterRemoved} סוננו כלא-טק) מ-${Object.keys(sourceBreakdown).length} מקורות`,
+      { total: allJobs.length, relevant: relevantJobs.length, techFilterRemoved, sourceBreakdown }, 'SUCCESS');
 
     // 7. Save and score jobs
     let saved = 0;
@@ -240,13 +293,27 @@ export async function runAutoPilot(
     let belowMinScore = 0;
     const allScores: number[] = [];
     const qualifyingJobs: any[] = [];
+    const sampleScores: Array<{ title: string; company: string; score: number; category: string; matched: string[]; missing: string[] }> = [];
 
     for (const jobData of relevantJobs) {
       // Blacklist check
       if (isCompanyBlacklisted(jobData.company || '', config.blacklistedCompanies)) { blacklisted++; continue; }
 
-      const smartScore = scoreJobLocally(jobData, profileAnalysis, config);
+      const smartScore = scoreJobLocally(jobData, profileAnalysis, preferences);
       allScores.push(smartScore.score);
+
+      // Collect sample of first 10 scored jobs for diagnostics
+      if (sampleScores.length < 10) {
+        sampleScores.push({
+          title: jobData.title || '?',
+          company: jobData.company || '?',
+          score: smartScore.score,
+          category: smartScore.category,
+          matched: (smartScore.matchedSkills || []).slice(0, 5),
+          missing: (smartScore.missingSkills || []).slice(0, 5),
+        });
+      }
+
       if (smartScore.score < config.minScore) { belowMinScore++; continue; }
 
       // Try to save job
@@ -352,7 +419,20 @@ export async function runAutoPilot(
       `${qualifyingJobs.length} משרות מתאימות (מתוך ${relevantJobs.length}), ${duplicates} כפולות | ציון ממוצע: ${avgScore}, מקסימום: ${maxScore}, מעל 50: ${above50}, מעל 40: ${above40} | מתחת ל-${config.minScore}: ${belowMinScore}, רשימה שחורה: ${blacklisted}`, {
       qualifying: qualifyingJobs.length, total: relevantJobs.length, duplicates, saved,
       scoring: { avg: avgScore, max: maxScore, above50, above40, belowMinScore, blacklisted, minScore: config.minScore },
+      sampleScores, // First 10 jobs with detailed breakdown
     }, qualifyingJobs.length > 0 ? 'SUCCESS' : 'WARNING');
+
+    // If zero qualifying, log a diagnostic hint
+    if (qualifyingJobs.length === 0 && relevantJobs.length > 0) {
+      const bestJob = sampleScores.sort((a, b) => b.score - a.score)[0];
+      await logEvent(userId, run.id, 'SCORING_DIAGNOSTIC',
+        `אף משרה לא עברה את סף ${config.minScore}. הציון הגבוה ביותר: ${maxScore} (${bestJob?.title || '?'} ב-${bestJob?.company || '?'}). ` +
+        (totalSkills === 0
+          ? 'הסיבה: הפרופיל ריק — העלה קורות חיים כדי שהמערכת תוכל למצוא התאמות.'
+          : `כישורים שהתאימו: ${bestJob?.matched?.join(', ') || 'אין'}, חסרים: ${bestJob?.missing?.join(', ') || 'אין'}`),
+        { bestScore: maxScore, bestJob, totalSkills, minScore: config.minScore },
+        'WARNING');
+    }
 
     // 8. Load user's CV library for smart matching
     const userCVs = await (prisma as any).uploadedCV.findMany({

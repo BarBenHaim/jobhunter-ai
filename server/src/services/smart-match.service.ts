@@ -643,6 +643,9 @@ export function scoreJobLocally(
     }
   }
 
+  // Check if candidate has enough skills to properly evaluate
+  const candidateHasSkills = expandedSkills.size >= 3;
+
   // ----------------------------------------------------------
   // STEP 3: REQUIREMENTS COVERAGE (50% of total score)
   // "How many of the job's actual requirements do I meet?"
@@ -750,8 +753,15 @@ export function scoreJobLocally(
   }
 
   // Only penalize hard if missing ALL or nearly all must-haves
-  if (totalMustHave >= 4 && matchedMustHave.length <= 1) {
+  // — but NOT when the candidate profile is too thin to evaluate
+  if (totalMustHave >= 4 && matchedMustHave.length <= 1 && candidateHasSkills) {
     requirementsCoverage = Math.min(requirementsCoverage, 25);
+  }
+
+  // If candidate profile is thin (< 3 skills), use a softer floor to avoid
+  // rejecting everything. The user just hasn't uploaded their CV yet.
+  if (!candidateHasSkills) {
+    requirementsCoverage = Math.max(requirementsCoverage, 45);
   }
 
   // ----------------------------------------------------------
@@ -993,15 +1003,21 @@ export function scoreJobLocally(
     ? [...expandedSkills].filter(s => jobReqs.allMentioned.includes(s)).length
     : [...expandedSkills].filter(s => fullText.includes(s)).length;
 
+  // If candidate has very few skills (empty/new profile), skip the tech gate entirely
+  // — we can't determine relevance without a baseline to compare against
   let isTechRelevant = titleHasTechPattern || totalSkillOverlap >= 2;
 
-  // If no tech pattern in title and very few skill matches, this is likely not a relevant job
-  if (!isTechRelevant) {
+  if (!isTechRelevant && candidateHasSkills) {
     // Check if description has enough tech overlap to still be relevant
     const descTechHits = [...expandedSkills].filter(s => fullText.includes(s)).length;
     if (descTechHits >= 3) {
-      isTechRelevant = true; // Description has enough tech content
+      isTechRelevant = true;
     }
+  }
+
+  // If candidate profile is too thin, assume relevance from job title/keywords
+  if (!candidateHasSkills) {
+    isTechRelevant = true; // Don't penalize when we can't evaluate
   }
 
   // ----------------------------------------------------------
