@@ -30,7 +30,7 @@ export const DEFAULT_AUTOPILOT_CONFIG: AutoPilotConfig = {
   enabled: false,
   mode: 'semi-auto',
   schedule: '0 */6 * * *',       // Every 6 hours
-  minScore: 60,
+  minScore: 40,
   autoApplyThreshold: 80,
   maxPerDay: 15,
   maxPerRun: 10,
@@ -235,14 +235,18 @@ export async function runAutoPilot(
     // 7. Save and score jobs
     let saved = 0;
     let duplicates = 0;
+    let blacklisted = 0;
+    let belowMinScore = 0;
+    const allScores: number[] = [];
     const qualifyingJobs: any[] = [];
 
     for (const jobData of relevantJobs) {
       // Blacklist check
-      if (isCompanyBlacklisted(jobData.company || '', config.blacklistedCompanies)) continue;
+      if (isCompanyBlacklisted(jobData.company || '', config.blacklistedCompanies)) { blacklisted++; continue; }
 
       const smartScore = scoreJobLocally(jobData, profileAnalysis, config);
-      if (smartScore.score < config.minScore) continue;
+      allScores.push(smartScore.score);
+      if (smartScore.score < config.minScore) { belowMinScore++; continue; }
 
       // Try to save job
       try {
@@ -337,9 +341,17 @@ export async function runAutoPilot(
       }
     }
 
-    await logEvent(userId, run.id, 'JOBS_SCORED', `${qualifyingJobs.length} משרות מתאימות (מתוך ${relevantJobs.length}), ${duplicates} כפולות`, {
+    // Score diagnostics
+    const avgScore = allScores.length > 0 ? Math.round(allScores.reduce((a, b) => a + b, 0) / allScores.length) : 0;
+    const maxScore = allScores.length > 0 ? Math.round(Math.max(...allScores)) : 0;
+    const above50 = allScores.filter(s => s >= 50).length;
+    const above40 = allScores.filter(s => s >= 40).length;
+
+    await logEvent(userId, run.id, 'JOBS_SCORED',
+      `${qualifyingJobs.length} משרות מתאימות (מתוך ${relevantJobs.length}), ${duplicates} כפולות | ציון ממוצע: ${avgScore}, מקסימום: ${maxScore}, מעל 50: ${above50}, מעל 40: ${above40} | מתחת ל-${config.minScore}: ${belowMinScore}, רשימה שחורה: ${blacklisted}`, {
       qualifying: qualifyingJobs.length, total: relevantJobs.length, duplicates, saved,
-    }, qualifyingJobs.length > 0 ? 'SUCCESS' : 'INFO');
+      scoring: { avg: avgScore, max: maxScore, above50, above40, belowMinScore, blacklisted, minScore: config.minScore },
+    }, qualifyingJobs.length > 0 ? 'SUCCESS' : 'WARNING');
 
     // 8. Process qualifying jobs — generate CVs and route
     const remainingSlots = Math.min(config.maxPerRun, config.maxPerDay - dailyCheck.used);
@@ -415,7 +427,6 @@ export async function runAutoPilot(
       applicationsSubmitted: autoSubmitted,
       applicationsQueued: queued,
       duration,
-      duplicates,
     };
 
     await (prisma as any).autoPilotRun.update({
