@@ -75,9 +75,21 @@ class LightweightScraperService {
         timeout: 15000,
       });
 
-      logger.info(`Indeed RSS response status: ${response.status}, data length: ${(response.data || '').length}`);
+      const dataStr = response.data || '';
+      logger.info(`Indeed RSS response status: ${response.status}, data length: ${dataStr.length}`);
 
-      const $ = cheerio.load(response.data, { xmlMode: true });
+      // Detect if Indeed returned a non-RSS response (CAPTCHA, HTML error, redirect)
+      const isRSS = typeof dataStr === 'string' && (dataStr.includes('<rss') || dataStr.includes('<item'));
+      if (!isRSS) {
+        const snippet = typeof dataStr === 'string' ? dataStr.substring(0, 200) : String(dataStr).substring(0, 200);
+        logger.warn('Indeed RSS returned non-RSS response (likely blocked/CAPTCHA)', {
+          status: response.status,
+          snippet,
+        });
+        return [];
+      }
+
+      const $ = cheerio.load(dataStr, { xmlMode: true });
       const items = $('item');
 
       logger.info(`Indeed RSS: Found ${items.length} items`);
@@ -102,11 +114,23 @@ class LightweightScraperService {
           }
 
           if (company === 'Unknown') {
+            // Indeed description often starts with "Company - Location - ..."
             const companyMatch = fullText.match(/^(.+?)\s*[-–]\s*(.+?)[-–]/);
             if (companyMatch) {
               company = companyMatch[1].trim();
               jobLocation = companyMatch[2].trim() || jobLocation;
             }
+          }
+          // Second fallback: title often ends with "- CompanyName"
+          if (company === 'Unknown') {
+            const titleCompany = title.match(/\s*[-–|]\s*([^-–|]+)$/);
+            if (titleCompany) {
+              company = titleCompany[1].trim();
+            }
+          }
+          // Last resort: use "Unknown Company" instead of "Unknown" to be clearer
+          if (company === 'Unknown') {
+            company = 'Unknown Company';
           }
 
           const pubDate = $item.find('pubDate').text().trim();
@@ -417,7 +441,7 @@ class LightweightScraperService {
       const serpApiKey = process.env.SERPAPI_KEY;
 
       if (!serpApiKey) {
-        logger.info('SerpAPI key not configured, skipping Google Jobs');
+        logger.warn('SerpAPI key not configured — Google Jobs scraping disabled. Set SERPAPI_KEY env var to enable.');
         return [];
       }
 
@@ -607,8 +631,17 @@ class LightweightScraperService {
 
       // Flatten all jobs from all companies into ScrapedJob format
       const jobs: ScrapedJob[] = [];
+      let companiesWithJobs = 0;
+      let companiesWithErrors = 0;
       for (const companyResult of results) {
+        if (companyResult.error) {
+          companiesWithErrors++;
+          logger.warn(`Top company scan failed: ${companyResult.company}`, {
+            error: companyResult.error,
+          });
+        }
         if (companyResult.jobs && companyResult.jobs.length > 0) {
+          companiesWithJobs++;
           for (const job of companyResult.jobs) {
             jobs.push({
               title: job.title,
@@ -624,7 +657,12 @@ class LightweightScraperService {
         }
       }
 
-      logger.info(`Found ${jobs.length} jobs from Top Israeli Companies`);
+      logger.info(`Top Israeli Companies scan complete`, {
+        totalCompanies: results.length,
+        companiesWithJobs,
+        companiesWithErrors,
+        totalJobs: jobs.length,
+      });
       return jobs;
     } catch (error) {
       logger.error('Error scraping Top Israeli Companies', { error });

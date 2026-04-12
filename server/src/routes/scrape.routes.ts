@@ -544,6 +544,15 @@ router.post('/smart-trigger', authMiddleware, async (req: AuthRequest, res: Resp
           scrapedCount: count,
           timestamp: new Date(),
         })),
+        // Surface warnings about sources that returned 0 results so the user
+        // knows WHY a source is empty (API key missing, blocked, etc.)
+        sourceWarnings: [
+          ...(!process.env.SERPAPI_KEY ? ['GOOGLE_JOBS: חסר SERPAPI_KEY — מקור זה מושבת. הגדר את המשתנה כדי לאפשר חיפוש ב-Google Jobs.'] : []),
+          ...(!(sourceBreakdown['INDEED'] > 0)
+            ? ['INDEED: לא התקבלו תוצאות — ייתכן ש-Indeed חוסם בקשות RSS מהשרת.'] : []),
+          ...(!(sourceBreakdown['TOP_COMPANIES'] > 0)
+            ? ['TOP_COMPANIES: לא נמצאו משרות מחברות מובילות — ייתכן שה-API של Greenhouse/Lever לא הגיב.'] : []),
+        ],
         keywords: allKeywords,
         smartKeywords: {
           primary: smartKeywords.primary?.slice(0, 5),
