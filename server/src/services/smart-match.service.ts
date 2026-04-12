@@ -65,7 +65,7 @@ interface CachedKeywords {
 }
 
 const keywordCache = new Map<string, CachedKeywords>();
-const KEYWORD_CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
+const KEYWORD_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours — regenerate daily for freshness
 
 function computeProfileHash(structuredProfile: any, preferences: any, searchConfig?: any): string {
   // Simple hash: stringify the key parts that affect keyword generation
@@ -442,22 +442,30 @@ export function analyzeProfileForScoring(
  * If someone held Role A, they're potentially a fit for Role B.
  */
 const ROLE_ADJACENCY: Record<string, string[]> = {
-  'full stack': ['frontend', 'backend', 'web developer', 'software engineer', 'full-stack', 'fullstack', 'developer'],
-  'frontend': ['ui developer', 'web developer', 'react developer', 'frontend engineer', 'ui engineer', 'full stack'],
-  'backend': ['server developer', 'api developer', 'backend engineer', 'full stack', 'software engineer', 'platform engineer'],
-  'devops': ['sre', 'site reliability', 'infrastructure', 'platform engineer', 'cloud engineer', 'system administrator', 'system engineer'],
-  'system admin': ['devops', 'it manager', 'infrastructure', 'network engineer', 'cloud engineer', 'system engineer'],
+  'full stack': ['frontend', 'backend', 'web developer', 'software engineer', 'full-stack', 'fullstack', 'developer', 'software developer'],
+  'frontend': ['ui developer', 'web developer', 'react developer', 'frontend engineer', 'ui engineer', 'full stack', 'ui/ux', 'ux engineer'],
+  'backend': ['server developer', 'api developer', 'backend engineer', 'full stack', 'software engineer', 'platform engineer', 'data engineer'],
+  'devops': ['sre', 'site reliability', 'infrastructure', 'platform engineer', 'cloud engineer', 'system administrator', 'system engineer', 'operations engineer'],
+  'system admin': ['devops', 'it manager', 'infrastructure', 'network engineer', 'cloud engineer', 'system engineer', 'operations'],
   'team lead': ['tech lead', 'engineering manager', 'development manager', 'architect', 'principal engineer', 'staff engineer'],
   'tech lead': ['team lead', 'architect', 'staff engineer', 'principal engineer', 'engineering manager'],
-  'product manager': ['project manager', 'product owner', 'scrum master', 'business analyst'],
-  'data engineer': ['backend', 'etl developer', 'data architect', 'analytics engineer', 'bi developer'],
-  'qa': ['test engineer', 'sdet', 'automation engineer', 'quality engineer', 'test automation'],
-  'mobile': ['ios developer', 'android developer', 'react native', 'flutter developer'],
-  'software engineer': ['developer', 'programmer', 'full stack', 'backend', 'frontend', 'software developer'],
-  // Student-specific adjacency
-  'student': ['junior', 'intern', 'graduate', 'entry level', 'trainee', 'developer', 'software engineer'],
+  'product manager': ['project manager', 'product owner', 'scrum master', 'business analyst', 'technical product manager'],
+  'data engineer': ['backend', 'etl developer', 'data architect', 'analytics engineer', 'bi developer', 'data analyst', 'data scientist'],
+  'data analyst': ['bi developer', 'analytics engineer', 'data engineer', 'business analyst', 'data scientist'],
+  'qa': ['test engineer', 'sdet', 'automation engineer', 'quality engineer', 'test automation', 'qa automation', 'qa engineer', 'בודק תוכנה'],
+  'automation': ['qa', 'test automation', 'sdet', 'devops', 'automation engineer'],
+  'mobile': ['ios developer', 'android developer', 'react native', 'flutter developer', 'mobile engineer'],
+  'software engineer': ['developer', 'programmer', 'full stack', 'backend', 'frontend', 'software developer', 'מהנדס תוכנה'],
+  'solutions architect': ['architect', 'cloud architect', 'technical consultant', 'presales engineer', 'software architect'],
+  'security': ['cyber', 'information security', 'security engineer', 'penetration', 'soc analyst', 'אבטחת מידע'],
+  // Student/junior transition — broader adjacencies for entering the workforce
+  'student': ['junior', 'intern', 'graduate', 'entry level', 'trainee', 'developer', 'software engineer', 'qa', 'test', 'automation', 'support engineer', 'it'],
+  'junior': ['student', 'intern', 'graduate', 'entry level', 'trainee', 'developer', 'software engineer', 'qa', 'frontend', 'backend', 'full stack', 'support'],
+  'intern': ['student', 'junior', 'graduate', 'trainee', 'developer', 'qa', 'test'],
   'developer': ['software engineer', 'programmer', 'full stack', 'web developer', 'software developer', 'מפתח'],
-  'מפתח': ['developer', 'software', 'programmer', 'full stack', 'פיתוח', 'תוכנה'],
+  'מפתח': ['developer', 'software', 'programmer', 'full stack', 'פיתוח', 'תוכנה', 'מהנדס'],
+  'מהנדס': ['engineer', 'developer', 'מפתח', 'software', 'תוכנה'],
+  'בודק': ['qa', 'test', 'automation', 'quality', 'בדיקות'],
 };
 
 /**
@@ -700,15 +708,30 @@ export function scoreJobLocally(
     const mustHaveRatio = matchedMustHave.length / totalMustHave;
     const niceRatio = totalNiceToHave > 0 ? matchedNiceToHave.length / totalNiceToHave : 0.5;
 
-    // Apply realistic curve: 60% raw coverage → 75 score (strong candidate)
+    // Apply realistic curve calibrated to real-world job description norms:
+    //   Job descriptions are wish lists. Matching 60% of must-haves makes
+    //   you a strong candidate in practice, so the curve is generous above
+    //   the 25% baseline.
+    //
+    //   mustHaveRatio  rawMust   → curvedMust  (× 0.65 + nice × 0.35)
+    //   0.25 (25%)     25        →  22         (≈ 14 + nice)
+    //   0.40 (40%)     40        →  42         (≈ 27 + nice)
+    //   0.50 (50%)     50        →  55         (≈ 36 + nice)  — "decent shot"
+    //   0.60 (60%)     60        →  68         (≈ 44 + nice)  — "strong"
+    //   0.80 (80%)     80        →  94         (≈ 61 + nice)  — "top candidate"
+    //   1.00 (100%)    100       → 100         (≈ 65 + nice)
     const rawMustScore = mustHaveRatio * 100;
-    const curvedMustScore = rawMustScore <= 30
-      ? rawMustScore * 0.8                          // Below 30% → harsh
-      : 30 * 0.8 + (rawMustScore - 30) * 1.15;     // Above 30% → generous curve
+    let curvedMustScore: number;
+    if (rawMustScore <= 25) {
+      curvedMustScore = rawMustScore * 0.9;            // Below 25% → modest penalty
+    } else {
+      curvedMustScore = 25 * 0.9 + (rawMustScore - 25) * 1.3;  // Above 25% → generous curve
+    }
     const clampedMust = Math.min(100, curvedMustScore);
 
-    // Must-haves 70%, nice-to-haves 30%
-    requirementsCoverage = Math.round(clampedMust * 0.70 + niceRatio * 100 * 0.30);
+    // Must-haves 65%, nice-to-haves 35% — slightly more weight to nice-to-haves
+    // because many "must-haves" in job posts are really nice-to-haves
+    requirementsCoverage = Math.round(clampedMust * 0.65 + niceRatio * 100 * 0.35);
   } else if (totalNiceToHave > 0) {
     // No clear must-haves — all skills treated as nice-to-have (less harsh)
     const niceRatio = matchedNiceToHave.length / totalNiceToHave;
@@ -822,13 +845,15 @@ export function scoreJobLocally(
       experienceScore = Math.max(5, 30 - (jobRequiredYears - years) * 8);
     }
   } else {
-    // No seniority info at all — for students, be cautious (most untitled jobs are mid-level)
+    // No seniority info at all — many job posts simply don't mention level,
+    // especially on Israeli boards. Being too pessimistic here kills the
+    // score for juniors/students on jobs that might actually be open to them.
     if (candidateIsStudent) {
-      experienceScore = 35; // Unlabeled jobs are usually not student-level
+      experienceScore = 45; // Unknown level — give benefit of the doubt
     } else if (candidateIsJunior) {
-      experienceScore = 40;
+      experienceScore = 50; // Many unlabeled jobs accept juniors
     } else {
-      experienceScore = 55; // Mid-level default
+      experienceScore = 60; // Mid-level default — neutral
     }
   }
 
@@ -989,10 +1014,14 @@ export function scoreJobLocally(
     locationScore * 0.05           //  5%: Location (minor)
   );
 
-  // TECH RELEVANCE GATE: Non-tech jobs get hard-capped
+  // TECH RELEVANCE GATE: Non-tech jobs are penalized but NOT hard-capped.
+  // A hard cap of 20 was too aggressive — jobs like "Operations Engineer"
+  // or Hebrew-titled tech roles sometimes miss pattern matching but still
+  // have genuine skill overlap. Use a multiplier so skill-matched jobs
+  // can still surface, but jobs with zero overlap score very low.
   if (!isTechRelevant) {
-    overallScore = Math.min(overallScore, 20);
-    roleScore = Math.min(roleScore, 10);
+    overallScore = Math.round(overallScore * 0.45);
+    roleScore = Math.min(roleScore, 25);
   }
 
   // ----------------------------------------------------------
