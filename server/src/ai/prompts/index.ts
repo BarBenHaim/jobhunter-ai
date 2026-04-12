@@ -226,48 +226,52 @@ export const CV_CONTENT_PROMPT = (
   profile: any
 ): PromptPair => ({
   system: `You are an expert CV writer and ATS optimization specialist.
-Your task is to generate tailored CV content that highlights the best match between candidate and job.
+Your task is to generate a ONE-PAGE tailored CV that highlights the best match between candidate and job.
+
+CRITICAL: The CV MUST fit on one page. Select only 2-4 most relevant experiences, condense or omit the rest.
 
 Return ONLY a valid JSON object:
 {
   "summary": "2-3 sentence professional summary tailored to THIS specific role",
-  "skills": ["Skill 1", "Skill 2", ...],
-  "keywordInjections": ["keyword1", "keyword2", ...],
-  "selectedExperiences": [
+  "skills": ["Skill 1", "Skill 2", ...] (max 12, ordered by job relevance),
+  "keywordInjections": ["keyword1", "keyword2", ...] (8-12 from job description),
+  "experiences": [
     {
-      "title": "Job Title",
+      "title": "Job Title (EXACT — no modifications)",
       "company": "Company",
       "duration": "X-Y (Years)",
-      "description": "2-3 sentences tailored to job relevance"
+      "description": "2-4 bullet points, each with concrete details (numbers, tech, deliverables)",
+      "relevance": "high" | "medium" | "condensed"
     }
   ],
-  "selectedEducation": [
+  "omittedExperiences": ["Role | Company | Reason omitted"],
+  "education": [
     {
       "degree": "Degree",
       "field": "Field",
       "school": "School"
     }
   ],
-  "selectedCertifications": ["Cert 1", "Cert 2"],
-  "selectedProjects": [
+  "projects": [
     {
       "name": "Project Name",
-      "description": "Tailored to highlight job-relevant aspects"
+      "description": "Concrete description with technologies and outcomes"
     }
-  ]
+  ],
+  "tailoredHighlights": ["5 specific reasons this candidate fits THIS job"],
+  "matchPercentage": 0-100
 }
 
 Tailoring rules:
-- Extract 10-15 keywords from job description that match candidate's background
-- Rewrite experience descriptions to emphasize relevant achievements
-- Lead with most relevant and recent experience
-- Remove irrelevant experiences unless they fill critical gaps
-- Add quantifiable results where possible (reduced by X%, improved Y%, managed Z)
-- Ensure ATS compatibility: no tables, special characters (except . , - ()), no graphics
-- Skills list: prioritize by job relevance, not chronological
-- Summary: directly address job requirements and express genuine interest
-- Include only education/certs that strengthen candidacy for THIS role
-- Tailor project descriptions to show technology match and relevant outcomes`,
+- SELECT 2-4 most relevant experiences (high/medium), condense 0-1 others (title+dates only)
+- Omit experiences that don't strengthen the application (list in omittedExperiences)
+- Extract 8-12 keywords from job description that match candidate's background
+- Each bullet point must have a concrete detail (number, tech name, specific deliverable)
+- Job titles must be EXACTLY as in the candidate's profile — no modifications
+- Skills: max 12, prioritize by job relevance
+- Summary: 2-3 sentences, do NOT mention the target company name
+- Include max 1-2 projects (only if relevant)
+- Ensure ATS compatibility: no tables, special characters (except . , - ()), no graphics`,
   user: `Generate tailored CV content for this specific job.
 
 Job:
