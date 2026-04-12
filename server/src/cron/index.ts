@@ -1,6 +1,8 @@
 import cron from 'node-cron';
 import logger from '../utils/logger';
 import config from '../config';
+import prisma from '../db/prisma';
+import { runAutoPilot, getUserAutoPilotConfig } from '../services/autopilot.service';
 
 export interface CronJob {
   name: string;
@@ -55,6 +57,56 @@ export const startCronJobs = (): void => {
     schedule: config.cron.followUpCheckSchedule,
     task: async () => {
       logger.info('Follow-up checker job would run here');
+    },
+    enabled: true,
+  });
+
+  // AutoPilot scheduler — checks all users every hour, runs for those whose schedule matches
+  registerCronJob({
+    name: 'autopilot-scheduler',
+    schedule: '0 * * * *', // Every hour, check if any user's autopilot should run
+    task: async () => {
+      try {
+        const users = await prisma.userProfile.findMany({
+          select: { id: true, preferences: true },
+        });
+
+        for (const user of users) {
+          const prefs = (user as any).preferences || {};
+          const apConfig = getUserAutoPilotConfig(prefs);
+
+          if (!apConfig.enabled) continue;
+          if (apConfig.pausedUntil && new Date(apConfig.pausedUntil) > new Date()) continue;
+
+          // Check if a run is already in progress
+          const activeRun = await (prisma as any).autoPilotRun.findFirst({
+            where: { userId: user.id, status: 'RUNNING' },
+          });
+          if (activeRun) continue;
+
+          // Check schedule — simple hour-based matching
+          // Supported schedules: every 1h, 3h, 6h, 12h, 24h
+          const hour = new Date().getHours();
+          const schedule = apConfig.schedule || '0 */6 * * *';
+          let shouldRun = false;
+
+          if (schedule.includes('*/1') || schedule === '0 * * * *') shouldRun = true;
+          else if (schedule.includes('*/3')) shouldRun = hour % 3 === 0;
+          else if (schedule.includes('*/6')) shouldRun = hour % 6 === 0;
+          else if (schedule.includes('*/12')) shouldRun = hour % 12 === 0;
+          else if (schedule === '0 2 * * *') shouldRun = hour === 2;
+          else shouldRun = hour % 6 === 0; // Default: every 6 hours
+
+          if (!shouldRun) continue;
+
+          logger.info(`[AutoPilot-Cron] Triggering scheduled run for user ${user.id}`);
+          runAutoPilot(user.id, 'SCHEDULE').catch(err => {
+            logger.error(`[AutoPilot-Cron] Run failed for user ${user.id}`, err);
+          });
+        }
+      } catch (err) {
+        logger.error('[AutoPilot-Cron] Scheduler error', err);
+      }
     },
     enabled: true,
   });

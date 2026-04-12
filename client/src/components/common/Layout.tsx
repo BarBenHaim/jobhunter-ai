@@ -12,6 +12,7 @@ import {
   LogOut,
   Search,
   Bell,
+  Zap,
 } from 'lucide-react'
 import { useAppStore } from '@/stores/app.store'
 import { authApi } from '@/services/auth.api'
@@ -22,6 +23,7 @@ const navItems = [
   { label: 'משרות', path: '/jobs', icon: Briefcase },
   { label: 'קורות חיים', path: '/cv-generator', icon: FileText },
   { label: 'הגשות', path: '/pipeline', icon: TrendingUp },
+  { label: 'AutoPilot', path: '/autopilot', icon: Zap },
   { label: 'פרופיל', path: '/profile', icon: User },
   { label: 'הגדרות', path: '/settings', icon: Settings },
 ]

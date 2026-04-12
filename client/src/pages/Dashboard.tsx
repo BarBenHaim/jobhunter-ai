@@ -31,6 +31,7 @@ import { scrapeApi, SearchConfig } from '@/services/scrape.api'
 import { profileApi } from '@/services/profile.api'
 import { costsApi } from '@/services/costs.api'
 import { dashboardApi } from '@/services/dashboard.api'
+import { autopilotApi } from '@/services/autopilot.api'
 
 // ─── Helpers ──────────────────────────────────────────────
 const fmt$ = (n: number) => {
@@ -203,6 +204,12 @@ const Dashboard = () => {
     queryFn: () => costsApi.getHistory(),
     refetchInterval: 60000,
     enabled: costDetailOpen,
+  })
+
+  const { data: apStatus } = useQuery({
+    queryKey: ['autopilot-status'],
+    queryFn: () => autopilotApi.getStatus(),
+    refetchInterval: 30000,
   })
 
   // ─── Scrape mutation ─────────────────────────────────
@@ -526,6 +533,73 @@ const Dashboard = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ═══════ AUTOPILOT STATUS ═══════ */}
+      {apStatus && (
+        <button
+          onClick={() => navigate('/autopilot')}
+          className="w-full rounded-card bg-white p-4 flex items-center gap-4 transition-all group text-right"
+          style={{ border: '1px solid var(--border)' }}
+          onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--brand)' }}
+          onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border)' }}
+        >
+          <div
+            className="h-10 w-10 rounded-full flex items-center justify-center flex-shrink-0"
+            style={{
+              background: apStatus.config?.enabled
+                ? apStatus.isRunning ? '#ecfdf5' : '#eaf2fb'
+                : 'var(--subtle)',
+            }}
+          >
+            <Zap
+              size={20}
+              style={{
+                color: apStatus.config?.enabled
+                  ? apStatus.isRunning ? '#057642' : 'var(--brand)'
+                  : 'var(--ink-tertiary)',
+              }}
+            />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="text-[14px] font-semibold" style={{ color: 'var(--ink-primary)' }}>
+                AutoPilot
+              </span>
+              <span
+                className="text-[11px] font-medium px-2 py-0.5 rounded-pill"
+                style={{
+                  background: apStatus.config?.enabled
+                    ? apStatus.isRunning ? '#dcfce7' : '#dbeafe'
+                    : 'var(--subtle)',
+                  color: apStatus.config?.enabled
+                    ? apStatus.isRunning ? '#057642' : 'var(--brand)'
+                    : 'var(--ink-tertiary)',
+                }}
+              >
+                {apStatus.config?.enabled
+                  ? apStatus.isRunning ? 'פעיל כרגע' : apStatus.config.mode === 'full-auto' ? 'אוטומטי מלא' : 'חצי-אוטומטי'
+                  : 'כבוי'}
+              </span>
+            </div>
+            <p className="text-[12px] mt-0.5" style={{ color: 'var(--ink-secondary)' }}>
+              {apStatus.todayStats
+                ? `היום: ${apStatus.todayStats.discovered} נמצאו · ${apStatus.todayStats.submitted} הוגשו · ${apStatus.todayStats.cvs} CVs`
+                : 'לא היו ריצות היום'}
+            </p>
+          </div>
+          {(apStatus.pendingApprovals ?? 0) > 0 && (
+            <div
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-pill flex-shrink-0"
+              style={{ background: '#fef3c7', border: '1px solid #fde68a' }}
+            >
+              <span className="text-[12px] font-semibold" style={{ color: '#92400e' }}>
+                {apStatus.pendingApprovals} ממתינים לאישור
+              </span>
+            </div>
+          )}
+          <ArrowUpRight size={16} className="flex-shrink-0" style={{ color: 'var(--ink-tertiary)' }} />
+        </button>
       )}
 
       {/* ═══════ SEARCH RESULTS SUMMARY ═══════ */}

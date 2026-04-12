@@ -94,6 +94,7 @@ model UserProfile {
 
   personas              Persona[]
   analyticsEvents       AnalyticsEvent[]
+  autopilotRuns         AutoPilotRun[]
 
   @@map("user_profiles")
 }
@@ -193,6 +194,7 @@ model Application {
   persona            Persona @relation(fields: [personaId], references: [id], onDelete: Cascade)
 
   status             AppStatus @default(PENDING)
+  autopilotRunId     String?
   cvFilePath         String?
   coverLetterPath    String?
   cvContent          Json?
@@ -249,6 +251,78 @@ model AnalyticsEvent {
   @@index([eventType])
   @@index([createdAt])
   @@map("analytics_events")
+}
+
+enum AutoPilotRunStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum AutoPilotTrigger {
+  SCHEDULE
+  MANUAL
+  WEBHOOK
+}
+
+enum AutoPilotLogSeverity {
+  INFO
+  WARNING
+  ERROR
+  SUCCESS
+}
+
+model AutoPilotRun {
+  id                     String              @id @default(cuid())
+  userId                 String
+  user                   UserProfile         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  personaId              String?
+
+  status                 AutoPilotRunStatus  @default(RUNNING)
+  triggeredBy            AutoPilotTrigger    @default(SCHEDULE)
+  config                 Json?               @default("{}")
+
+  jobsDiscovered         Int                 @default(0)
+  jobsQualifying         Int                 @default(0)
+  cvsGenerated           Int                 @default(0)
+  applicationsSubmitted  Int                 @default(0)
+  applicationsQueued     Int                 @default(0)
+  totalCost              Float               @default(0)
+  duration               Int?
+  error                  String?
+
+  startedAt              DateTime            @default(now())
+  completedAt            DateTime?
+  createdAt              DateTime            @default(now())
+  updatedAt              DateTime            @updatedAt
+
+  logs                   AutoPilotLog[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([startedAt])
+  @@map("autopilot_runs")
+}
+
+model AutoPilotLog {
+  id                     String                 @id @default(cuid())
+  runId                  String?
+  run                    AutoPilotRun?          @relation(fields: [runId], references: [id], onDelete: Cascade)
+  userId                 String
+
+  eventType              String
+  message                String
+  data                   Json?                  @default("{}")
+  severity               AutoPilotLogSeverity   @default(INFO)
+
+  createdAt              DateTime               @default(now())
+
+  @@index([runId])
+  @@index([userId])
+  @@index([eventType])
+  @@index([createdAt])
+  @@map("autopilot_logs")
 }
 
 model ScoringRule {
