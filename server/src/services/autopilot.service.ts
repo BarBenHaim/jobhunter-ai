@@ -241,7 +241,7 @@ export async function runAutoPilot(
       // Blacklist check
       if (isCompanyBlacklisted(jobData.company || '', config.blacklistedCompanies)) continue;
 
-      const smartScore = scoreJobLocally(jobData, profileAnalysis);
+      const smartScore = scoreJobLocally(jobData, profileAnalysis, config);
       if (smartScore.score < config.minScore) continue;
 
       // Try to save job
