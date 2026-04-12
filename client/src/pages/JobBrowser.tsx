@@ -56,8 +56,28 @@ const getSmartScore = (job: any): {
   redFlags: string[];
   hasSmartScore: boolean;
 } => {
-  // Priority 1: Smart local score from rawData (set by smart-trigger)
   const rawData = job.rawData || {}
+
+  // Priority 1: Per-persona JobScore (scoped server-side to the current
+  // user's persona). This is the authoritative score because rawData.smartScore
+  // lives on the shared Job row and gets overwritten by whichever user
+  // last scored the job (last-writer-wins). The JobScore is per-persona so
+  // it always reflects THIS user's match quality.
+  if (job.scores?.length > 0) {
+    const s = job.scores[0]
+    return {
+      score: Math.round(s.overallScore),
+      category: s.recommendation || rawData.smartCategory || 'UNKNOWN',
+      reasoning: s.reasoning || rawData.smartReasoning || '',
+      matchedSkills: s.matchedSkills || rawData.matchedSkills || [],
+      missingSkills: s.missingSkills || rawData.missingSkills || [],
+      greenFlags: rawData.greenFlags || [],
+      redFlags: s.redFlags || rawData.redFlags || [],
+      hasSmartScore: true,
+    }
+  }
+
+  // Priority 2: Fallback to rawData.smartScore (global, shared)
   if (rawData.smartScore != null) {
     return {
       score: rawData.smartScore,
@@ -68,21 +88,6 @@ const getSmartScore = (job: any): {
       greenFlags: rawData.greenFlags || [],
       redFlags: rawData.redFlags || [],
       hasSmartScore: true,
-    }
-  }
-
-  // Priority 2: AI scoring (from JobScore model)
-  if (job.scores?.length > 0) {
-    const s = job.scores[0]
-    return {
-      score: Math.round(s.overallScore),
-      category: s.recommendation || 'UNKNOWN',
-      reasoning: s.reasoning || '',
-      matchedSkills: s.matchedSkills || [],
-      missingSkills: s.missingSkills || [],
-      greenFlags: [],
-      redFlags: s.redFlags || [],
-      hasSmartScore: false,
     }
   }
 

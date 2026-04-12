@@ -200,6 +200,36 @@ export class JobService {
       // Note: minSmartScore filtering is handled post-query (JSON field)
       const minSmartScore = filters.minSmartScore as number | undefined;
 
+      // Build the scores include — scoped to the user's persona(s) so the
+      // client only receives scores belonging to this user. Without this
+      // `where`, `scores[0]` could be another user's score, causing the
+      // displayed match-% to differ from the actual persona score. The
+      // shared `rawData.smartScore` field is unreliable for multi-user
+      // (last writer wins), so we always prefer `scores[0].overallScore`
+      // from the scoped include.
+      const scoresInclude: any = {
+        select: {
+          personaId: true,
+          overallScore: true,
+          recommendation: true,
+          reasoning: true,
+          matchedSkills: true,
+          missingSkills: true,
+          redFlags: true,
+        },
+        ...(userPersonaIds && userPersonaIds.length > 0
+          ? { where: { personaId: { in: userPersonaIds } } }
+          : {}),
+      };
+
+      // Helper: extract the authoritative score for this user from a job
+      // row. Prefers the scoped JobScore (per-persona) over rawData.smartScore
+      // (global, last-writer-wins).
+      const getUserScore = (j: any): number => {
+        if (j.scores?.length > 0) return j.scores[0].overallScore ?? 0;
+        return (j.rawData as any)?.smartScore ?? 0;
+      };
+
       // For smartScore sort we need raw SQL because Prisma can't sort by JSON fields easily
       let jobs: any[];
       let total: number;
@@ -209,13 +239,7 @@ export class JobService {
         let allJobs = await prisma.job.findMany({
           where,
           include: {
-            scores: {
-              select: {
-                personaId: true,
-                overallScore: true,
-                recommendation: true,
-              },
-            },
+            scores: scoresInclude,
             applications: {
               select: { id: true, status: true },
             },
@@ -224,17 +248,14 @@ export class JobService {
 
         // Filter by minimum smart score if requested
         if (minSmartScore) {
-          allJobs = allJobs.filter((j: any) => {
-            const score = (j.rawData as any)?.smartScore ?? (j.scores?.[0]?.overallScore ?? 0);
-            return score >= minSmartScore;
-          });
+          allJobs = allJobs.filter((j: any) => getUserScore(j) >= minSmartScore);
         }
 
-        // Sort by smartScore from rawData (if smartScore sort requested)
+        // Sort by smartScore (if smartScore sort requested)
         if (isSmartScoreSort) {
           allJobs.sort((a: any, b: any) => {
-            const aScore = (a.rawData as any)?.smartScore ?? (a.scores?.[0]?.overallScore ?? 0);
-            const bScore = (b.rawData as any)?.smartScore ?? (b.scores?.[0]?.overallScore ?? 0);
+            const aScore = getUserScore(a);
+            const bScore = getUserScore(b);
             return sortOrder === 'desc' ? bScore - aScore : aScore - bScore;
           });
         }
@@ -247,13 +268,7 @@ export class JobService {
           prisma.job.findMany({
             where,
             include: {
-              scores: {
-                select: {
-                  personaId: true,
-                  overallScore: true,
-                  recommendation: true,
-                },
-              },
+              scores: scoresInclude,
               applications: {
                 select: { id: true, status: true },
               },
@@ -289,18 +304,22 @@ export class JobService {
       // (has a JobScore for one of their personas). This keeps the detail
       // view consistent with the list view.
       const baseWhere: any = { id: jobId };
+      const personaIds = userId ? await getUserPersonaIds(userId) : null;
       if (userId) {
-        const personaIds = await getUserPersonaIds(userId);
-        if (personaIds.length === 0) {
+        if (!personaIds || personaIds.length === 0) {
           throw new NotFoundError(`Job with id ${jobId} not found`);
         }
         baseWhere.scores = { some: { personaId: { in: personaIds } } };
       }
 
+      // Scope scores to the user's personas so the detail view only shows
+      // this user's match data (same logic as listJobs).
       const job = await prisma.job.findFirst({
         where: baseWhere,
         include: {
-          scores: true,
+          scores: personaIds && personaIds.length > 0
+            ? { where: { personaId: { in: personaIds } } }
+            : true,
           applications: {
             include: {
               followUps: true,
