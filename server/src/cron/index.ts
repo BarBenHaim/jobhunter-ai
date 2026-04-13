@@ -3,6 +3,7 @@ import logger from '../utils/logger';
 import config from '../config';
 import prisma from '../db/prisma';
 import { runAutoPilot, getUserAutoPilotConfig } from '../services/autopilot.service';
+import { savedSearchRunnerService } from '../services/saved-search-runner.service';
 
 export interface CronJob {
   name: string;
@@ -106,6 +107,22 @@ export const startCronJobs = (): void => {
         }
       } catch (err) {
         logger.error('[AutoPilot-Cron] Scheduler error', err);
+      }
+    },
+    enabled: true,
+  });
+
+  // Saved Search runner — checks every hour for saved searches that need execution
+  registerCronJob({
+    name: 'saved-search-runner',
+    schedule: '30 * * * *', // Every hour at :30 (offset from autopilot at :00)
+    task: async () => {
+      try {
+        logger.info('[SavedSearch-Cron] Running saved search checks...');
+        await savedSearchRunnerService.runSavedSearches();
+        logger.info('[SavedSearch-Cron] Completed');
+      } catch (err) {
+        logger.error('[SavedSearch-Cron] Error running saved searches', err);
       }
     },
     enabled: true,

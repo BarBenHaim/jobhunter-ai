@@ -1,6 +1,7 @@
 import prisma from '../db/prisma';
 import logger from '../utils/logger';
-import { smartMatchService, analyzeProfileForScoring, scoreJobLocally } from './smart-match.service';
+import { smartMatchService, analyzeProfileForScoring, scoreJobLocally, buildSkillDepthProfile, aiReRankJobs, generateStackSearchQueries } from './smart-match.service';
+import type { SkillDepth } from './smart-match.service';
 import { lightweightScraperService } from './lightweight-scraper.service';
 import { personaService } from './persona.service';
 import { profileService } from './profile.service';
@@ -204,16 +205,65 @@ export async function runAutoPilot(
       };
     }
 
-    const allKeywords = (smartKeywords.combined || []).slice(0, 12);
+    // ── Skill Depth Profiling ──
+    // Build a detailed skill depth profile for smarter matching and stack-based search
+    let skillDepth: SkillDepth[] = [];
+    try {
+      skillDepth = buildSkillDepthProfile(structuredProfile, rawKnowledge);
+      if (skillDepth.length > 0) {
+        logger.info(`[AutoPilot] Skill depth profile: ${skillDepth.length} skills profiled`, {
+          top5: skillDepth.slice(0, 5).map(s => `${s.name}(${s.level},${s.yearsUsed}y)`),
+        });
+      }
+    } catch (err) {
+      logger.warn('[AutoPilot] Skill depth profiling failed, continuing without it', err);
+    }
+
+    // Merge combined + discovery keywords for maximum coverage
+    const combinedKeywords = smartKeywords.combined || [];
+    const discoveryKeywords = smartKeywords.discovery || [];
+    // Add discovery keywords that aren't already in combined (deduplicated)
+    const combinedSet = new Set(combinedKeywords.map((k: string) => k.toLowerCase()));
+    for (const dk of discoveryKeywords) {
+      if (!combinedSet.has(dk.toLowerCase())) {
+        combinedKeywords.push(dk);
+      }
+    }
+
+    // ── Tech-Stack Search Queries ──
+    // Generate additional search queries based on tech-stack combinations
+    // These find jobs that match the candidate's actual tool combinations, not just role titles
+    // Note: profileAnalysis is created later (step 6), so we create a temporary one here
+    const earlyProfileAnalysis = analyzeProfileForScoring(structuredProfile, rawKnowledge, preferences);
+    let stackQueries: string[] = [];
+    try {
+      stackQueries = generateStackSearchQueries(earlyProfileAnalysis, skillDepth, preferences);
+      if (stackQueries.length > 0) {
+        logger.info(`[AutoPilot] Stack-based queries: ${stackQueries.length}`, { stackQueries });
+        // Add stack queries that aren't already in combined (deduplicated)
+        for (const sq of stackQueries) {
+          if (!combinedSet.has(sq.toLowerCase())) {
+            combinedKeywords.push(sq);
+            combinedSet.add(sq.toLowerCase());
+          }
+        }
+      }
+    } catch (err) {
+      logger.warn('[AutoPilot] Stack search query generation failed, continuing without it', err);
+    }
+
+    const allKeywords = combinedKeywords.slice(0, 25); // Increased cap to accommodate stack queries
     const location = config.location || preferences?.preferredLocations?.[0] || 'Israel';
 
     // 5. Scrape jobs
     const allJobs: any[] = [];
     const sourceBreakdown: Record<string, number> = {};
-    const BATCH_SIZE = 2;
+    // Search keywords individually for better job board results
+    // Searching 6+ keywords together produces nonsensical queries (e.g., "React Developer Node.js TypeScript Frontend מפתח")
+    // that job boards cannot handle. Each keyword is searched separately for accuracy.
     const keywordBatches: string[][] = [];
-    for (let i = 0; i < allKeywords.length; i += Math.ceil(allKeywords.length / BATCH_SIZE)) {
-      keywordBatches.push(allKeywords.slice(i, i + Math.ceil(allKeywords.length / BATCH_SIZE)));
+    for (const kw of allKeywords) {
+      keywordBatches.push([kw]); // Each keyword searched separately
     }
 
     for (const batch of keywordBatches) {
@@ -283,8 +333,9 @@ export async function runAutoPilot(
 
     await (prisma as any).autoPilotRun.update({ where: { id: run.id }, data: { jobsDiscovered: relevantJobs.length } });
     await logEvent(userId, run.id, 'JOBS_DISCOVERED',
-      `נמצאו ${relevantJobs.length} משרות (מתוך ${allJobs.length} סה"כ, ${techFilterRemoved} סוננו כלא-טק) מ-${Object.keys(sourceBreakdown).length} מקורות`,
-      { total: allJobs.length, relevant: relevantJobs.length, techFilterRemoved, sourceBreakdown }, 'SUCCESS');
+      `נמצאו ${relevantJobs.length} משרות (מתוך ${allJobs.length} סה"כ, ${techFilterRemoved} סוננו כלא-טק) מ-${Object.keys(sourceBreakdown).length} מקורות` +
+      (stackQueries.length > 0 ? ` | ${stackQueries.length} חיפושי Tech-Stack נוספו` : ''),
+      { total: allJobs.length, relevant: relevantJobs.length, techFilterRemoved, sourceBreakdown, stackQueriesUsed: stackQueries.length, skillDepthCount: skillDepth.length }, 'SUCCESS');
 
     // 7. Save and score jobs
     let saved = 0;
@@ -318,6 +369,11 @@ export async function runAutoPilot(
 
       // Try to save job
       try {
+        // Deduplication by title-company-source (not location).
+        // Design tradeoff: Same job on different sources (e.g., "Full Stack Developer" on Indeed vs Drushim) may have
+        // slightly different titles and won't deduplicate — better to show both than miss a real job opportunity.
+        // Conversely, different jobs at the same company with identical titles will deduplicate — acceptable since
+        // job boards rarely list entirely different roles with the same title.
         const dedupHash = `${(jobData.title || '').toLowerCase().replace(/\s+/g, '-')}-${(jobData.company || '').toLowerCase().replace(/\s+/g, '-')}-${(jobData.source || 'OTHER').toLowerCase()}`;
 
         const existing = await prisma.job.findUnique({ where: { dedupHash } });
@@ -432,6 +488,51 @@ export async function runAutoPilot(
           : `כישורים שהתאימו: ${bestJob?.matched?.join(', ') || 'אין'}, חסרים: ${bestJob?.missing?.join(', ') || 'אין'}`),
         { bestScore: maxScore, bestJob, totalSkills, minScore: config.minScore },
         'WARNING');
+    }
+
+    // 7.5. ── AI Re-Ranking ──
+    // Send top qualifying jobs to AI for deep analysis — blends 60% AI + 40% local score
+    // Only runs if there are enough qualifying jobs to make it worthwhile
+    if (qualifyingJobs.length >= 3 && profileAnalysis) {
+      try {
+        const jobsForAI = qualifyingJobs
+          .sort((a, b) => b.score.score - a.score.score)
+          .slice(0, 20)
+          .map(({ job, score }) => ({
+            id: job.id,
+            title: job.title || '',
+            company: job.company || '',
+            description: job.description || '',
+            requirements: (job as any).requirements || '',
+            localScore: score.score,
+            localCategory: score.category,
+          }));
+
+        logger.info(`[AutoPilot] AI Re-Ranking ${jobsForAI.length} top jobs...`);
+        const reRanked = await aiReRankJobs(jobsForAI, profileAnalysis, skillDepth, preferences, 20);
+
+        if (reRanked.length > 0) {
+          // Update qualifying jobs with blended scores
+          const reRankedMap = new Map(reRanked.map(r => [r.id, r]));
+          for (const qj of qualifyingJobs) {
+            const aiResult = reRankedMap.get(qj.job.id);
+            if (aiResult) {
+              // Update the score object with blended score
+              qj.score.score = aiResult.finalScore;
+              qj.score.reasoning = `${qj.score.reasoning || ''}\n🤖 AI: ${aiResult.aiReasoning}`;
+              qj.score.category = aiResult.aiCategory || qj.score.category;
+            }
+          }
+          await logEvent(userId, run.id, 'AI_RERANKING',
+            `AI Re-Ranking הושלם: ${reRanked.length} משרות נותחו מחדש. שיפור ממוצע: ${Math.round(reRanked.reduce((sum, r) => sum + (r.finalScore - r.aiScore * 0.4), 0) / reRanked.length)}%`,
+            { reRankedCount: reRanked.length, topAIScore: Math.max(...reRanked.map(r => r.finalScore)) }, 'SUCCESS');
+        }
+      } catch (err) {
+        logger.warn('[AutoPilot] AI Re-Ranking failed, using local scores only', err);
+        await logEvent(userId, run.id, 'AI_RERANKING_FAILED',
+          'AI Re-Ranking לא הצליח — ממשיך עם ציונים מקומיים בלבד',
+          { error: (err as any)?.message }, 'WARNING');
+      }
     }
 
     // 8. Load user's CV library for smart matching

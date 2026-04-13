@@ -260,14 +260,9 @@ export interface JobFilters {
   limit?: number
   source?: JobSource | string
   locationType?: LocationType | string
-  experienceLevel?: string
-  location?: string
-  datePosted?: string
   search?: string
   sort?: string
   order?: 'asc' | 'desc'
-  searchSessionId?: string
-  minSmartScore?: number
 }
 
 export interface ApplicationFilters {

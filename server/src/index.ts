@@ -30,6 +30,9 @@ import discoveryRoutes from './routes/discovery.routes';
 import costsRoutes from './routes/costs.routes';
 import dashboardRoutes from './routes/dashboard.routes';
 import autopilotRoutes from './routes/autopilot.routes';
+import hiddenJobsRoutes from './routes/hidden-jobs.routes';
+import savedSearchRoutes from './routes/saved-search.routes';
+import autoApplyRoutes from './routes/auto-apply.routes';
 
 dotenv.config();
 
@@ -129,6 +132,9 @@ app.use('/api/discovery', discoveryRoutes);
 app.use('/api/costs', costsRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/autopilot', autopilotRoutes);
+app.use('/api/hidden-jobs', hiddenJobsRoutes);
+app.use('/api/saved-searches', savedSearchRoutes);
+app.use('/api/auto-apply', autoApplyRoutes);
 
 app.use((req: Request, res: Response) => {
   res.status(404).json({

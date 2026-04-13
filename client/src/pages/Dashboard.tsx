@@ -27,7 +27,7 @@ import {
   Wallet,
   Zap,
 } from 'lucide-react'
-import { scrapeApi, SearchConfig } from '@/services/scrape.api'
+import { scrapeApi, SearchConfig, SearchIntent } from '@/services/scrape.api'
 import { profileApi } from '@/services/profile.api'
 import { costsApi } from '@/services/costs.api'
 import { dashboardApi } from '@/services/dashboard.api'
@@ -167,6 +167,11 @@ const Dashboard = () => {
   const [keywordInput, setKeywordInput] = useState('')
   const [experienceLevel, setExperienceLevel] = useState('')
 
+  // Free-text search state
+  const [freeTextQuery, setFreeTextQuery] = useState('')
+  const [freeTextIntent, setFreeTextIntent] = useState<SearchIntent | null>(null)
+  const [interpretingSearch, setInterpretingSearch] = useState(false)
+
   // ─── Queries ─────────────────────────────────────────
   const { data: insights, isLoading: insightsLoading } = useQuery({
     queryKey: ['dashboard-insights'],
@@ -235,8 +240,9 @@ const Dashboard = () => {
     else config.location = defaultLocation
     if (customKeywords.length > 0) config.keywords = customKeywords
     if (experienceLevel) config.experienceLevel = experienceLevel
+    if (freeTextQuery.trim()) config.freeTextQuery = freeTextQuery.trim()
     return config
-  }, [enabledSources, minScore, searchLocation, customKeywords, experienceLevel, defaultLocation])
+  }, [enabledSources, minScore, searchLocation, customKeywords, experienceLevel, defaultLocation, freeTextQuery])
 
   const [lastSearchResult, setLastSearchResult] = useState<{
     sessionId: string; count: number; keywords: string[]
@@ -710,43 +716,111 @@ const Dashboard = () => {
 
       {/* ═══════ SMART SEARCH ═══════ */}
       <div className="rounded-card bg-white overflow-hidden" style={{ border: '1px solid var(--border)' }}>
-        {/* Search header */}
-        <div className="p-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-card flex items-center justify-center" style={{ background: 'var(--subtle)' }}>
-              <Search size={18} style={{ color: 'var(--brand)' }} />
-            </div>
-            <div className="text-right">
-              <h3 className="text-[15px] font-semibold" style={{ color: 'var(--ink-primary)' }}>חיפוש משרות חכם</h3>
-              <p className="text-[12px]" style={{ color: 'var(--ink-secondary)' }}>
-                {enabledSources.length > 0 ? `${enabledSources.length} מקורות` : 'כל המקורות'}
-                {minScore > 0 ? ` • מינימום ${minScore}%` : ''}
-                {searchLocation ? ` • ${searchLocation}` : ''}
-                {customKeywords.length > 0 ? ` • ${customKeywords.length} מילות מפתח` : ''}
-              </p>
-            </div>
+        {/* Free-text search bar — main feature */}
+        <div className="p-4 pb-3">
+          <div className="flex items-center gap-2 mb-3">
+            <Sparkles size={16} style={{ color: 'var(--brand)' }} />
+            <h3 className="text-[15px] font-semibold" style={{ color: 'var(--ink-primary)' }}>חיפוש משרות חכם</h3>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <Search size={16} className="absolute right-3 top-3" style={{ color: 'var(--ink-tertiary)' }} />
+              <input
+                type="text"
+                placeholder="תאר מה אתה מחפש... למשל: ״פיתוח מוצר בסטרטאפ״ או ״fullstack with Python in fintech״"
+                value={freeTextQuery}
+                onChange={(e) => {
+                  setFreeTextQuery(e.target.value)
+                  setFreeTextIntent(null) // Clear preview when editing
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !scrapeMutation.isPending) {
+                    e.preventDefault()
+                    scrapeMutation.mutate()
+                  }
+                }}
+                onBlur={async () => {
+                  // Auto-interpret when user finishes typing (if text is long enough)
+                  if (freeTextQuery.trim().length >= 5 && !freeTextIntent) {
+                    setInterpretingSearch(true)
+                    try {
+                      const res = await scrapeApi.interpretSearch(freeTextQuery.trim())
+                      if (res.success) setFreeTextIntent(res.data)
+                    } catch { /* ignore */ }
+                    setInterpretingSearch(false)
+                  }
+                }}
+                className="w-full pr-10 pl-3 py-2.5 rounded-card text-[14px]"
+                style={{ border: '1px solid var(--border)', color: 'var(--ink-primary)', background: 'var(--subtle)' }}
+                dir="auto"
+              />
+            </div>
+            <button
+              onClick={() => scrapeMutation.mutate()}
+              disabled={scrapeMutation.isPending}
+              className="flex items-center gap-1.5 px-5 py-2.5 rounded-pill text-[13px] font-semibold text-white disabled:opacity-60 flex-shrink-0"
+              style={{ background: 'var(--brand)' }}
+            >
+              {scrapeMutation.isPending ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
+              חפש
+            </button>
+          </div>
+
+          {/* Intent preview — shows how the system understood the query */}
+          {interpretingSearch && (
+            <div className="flex items-center gap-2 mt-2">
+              <Loader2 size={12} className="animate-spin" style={{ color: 'var(--ink-tertiary)' }} />
+              <span className="text-[11px]" style={{ color: 'var(--ink-tertiary)' }}>מפרש את החיפוש...</span>
+            </div>
+          )}
+          {freeTextIntent && !interpretingSearch && (
+            <div className="mt-2 p-2.5 rounded-card" style={{ background: 'var(--subtle)', border: '1px solid var(--border)' }}>
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <Target size={12} style={{ color: 'var(--brand)' }} />
+                <span className="text-[11px] font-semibold" style={{ color: 'var(--brand)' }}>הבנתי:</span>
+                <span className="text-[11px]" style={{ color: 'var(--ink-secondary)' }}>{freeTextIntent.intentSummary}</span>
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {freeTextIntent.keywords.slice(0, 6).map((kw) => (
+                  <span key={kw} className="px-2 py-0.5 rounded-pill text-[10px]" style={{ background: 'var(--selected)', color: 'var(--brand)' }}>{kw}</span>
+                ))}
+                {freeTextIntent.hebrewKeywords.slice(0, 3).map((kw) => (
+                  <span key={kw} className="px-2 py-0.5 rounded-pill text-[10px]" style={{ background: 'var(--selected)', color: 'var(--brand)' }}>{kw}</span>
+                ))}
+                {freeTextIntent.scoringBoosts.companyTypes.map((ct) => (
+                  <span key={ct} className="px-2 py-0.5 rounded-pill text-[10px]" style={{ background: '#ecfdf5', color: '#057642' }}>🏢 {ct}</span>
+                ))}
+                {freeTextIntent.scoringBoosts.domains.map((d) => (
+                  <span key={d} className="px-2 py-0.5 rounded-pill text-[10px]" style={{ background: '#eff6ff', color: '#1d4ed8' }}>🎯 {d}</span>
+                ))}
+                {freeTextIntent.scoringBoosts.preferRemote && (
+                  <span className="px-2 py-0.5 rounded-pill text-[10px]" style={{ background: '#f0fdf4', color: '#166534' }}>🏠 remote</span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Compact config summary + toggle */}
+          <div className="flex items-center justify-between mt-3 pt-2" style={{ borderTop: '1px solid var(--border)' }}>
+            <p className="text-[11px]" style={{ color: 'var(--ink-tertiary)' }}>
+              {enabledSources.length > 0 ? `${enabledSources.length} מקורות` : 'כל המקורות'}
+              {minScore > 0 ? ` • מינימום ${minScore}%` : ''}
+              {searchLocation ? ` • ${searchLocation}` : ''}
+              {customKeywords.length > 0 ? ` • ${customKeywords.length} מילות מפתח` : ''}
+              {!freeTextQuery.trim() && customKeywords.length === 0 ? ' • מילות חיפוש אוטומטיות מהפרופיל' : ''}
+            </p>
             <button
               onClick={() => setSearchConfigOpen(!searchConfigOpen)}
-              className="p-2.5 rounded-pill text-sm transition-colors"
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-pill text-[11px] font-medium transition-colors"
               style={{
                 border: '1px solid var(--border)',
                 background: searchConfigOpen ? 'var(--selected)' : 'white',
                 color: searchConfigOpen ? 'var(--brand)' : 'var(--ink-secondary)',
               }}
-              title="הגדרות חיפוש"
             >
-              <Settings2 size={18} />
-            </button>
-            <button
-              onClick={() => scrapeMutation.mutate()}
-              disabled={scrapeMutation.isPending}
-              className="flex items-center gap-1.5 px-5 py-2.5 rounded-pill text-[13px] font-semibold text-white disabled:opacity-60"
-              style={{ background: 'var(--brand)' }}
-            >
-              {scrapeMutation.isPending ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
-              חפש עכשיו
+              <Settings2 size={13} />
+              הגדרות מתקדמות
+              {searchConfigOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
             </button>
           </div>
         </div>

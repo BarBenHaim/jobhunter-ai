@@ -61,9 +61,11 @@ class LightweightScraperService {
     try {
       logger.info('Scraping Indeed Israel via RSS feed', { keywords, location });
       const jobs: ScrapedJob[] = [];
-      const searchTerms = keywords.join(' ');
+      // Use only the first keyword. AutoPilot now sends individual keywords in separate batches.
+      // This avoids the poor search quality of multi-keyword queries like "React Developer Node.js TypeScript".
+      const searchTerm = keywords[0] || 'software developer';
 
-      const url = `https://il.indeed.com/rss?q=${encodeURIComponent(searchTerms)}&l=${encodeURIComponent(location || 'Israel')}&sort=date`;
+      const url = `https://il.indeed.com/rss?q=${encodeURIComponent(searchTerm)}&l=${encodeURIComponent(location || 'Israel')}&sort=date`;
 
       const response = await this.axiosInstance.get(url, {
         headers: {
@@ -175,7 +177,9 @@ class LightweightScraperService {
       logger.info('Scraping Drushim (HTML)', { keywords, location });
 
       const jobs: ScrapedJob[] = [];
-      const searchTerm = keywords.join(' ');
+      // Use only the first keyword. AutoPilot now sends individual keywords in separate batches.
+      // This avoids the poor search quality of multi-keyword queries like "React Developer Node.js TypeScript".
+      const searchTerm = keywords[0] || 'מפתח תוכנה';
 
       // Drushim SSR search page
       const url = `https://www.drushim.co.il/jobs/search/${encodeURIComponent(searchTerm)}/`;
@@ -308,7 +312,9 @@ class LightweightScraperService {
       logger.info('Scraping AllJobs', { keywords, location });
 
       const jobs: ScrapedJob[] = [];
-      const searchTerm = keywords.join(' ');
+      // Use only the first keyword. AutoPilot now sends individual keywords in separate batches.
+      // This avoids the poor search quality of multi-keyword queries like "React Developer Node.js TypeScript".
+      const searchTerm = keywords[0] || 'מפתח תוכנה';
 
       // AllJobs guest search page (no login required)
       const url = `https://www.alljobs.co.il/SearchResultsGuest.aspx?page=1&position=&type=&rid=&city=&poession=${encodeURIComponent(searchTerm)}`;
@@ -448,7 +454,9 @@ class LightweightScraperService {
       logger.info('Scraping Google Jobs via SerpAPI', { keywords, location });
 
       const jobs: ScrapedJob[] = [];
-      const searchTerm = keywords.join(' ');
+      // Use only the first keyword. AutoPilot now sends individual keywords in separate batches.
+      // This avoids the poor search quality of multi-keyword queries like "React Developer Node.js TypeScript".
+      const searchTerm = keywords[0] || 'software developer';
 
       // Use SerpAPI to get Google Jobs results
       const url = 'https://serpapi.com/search';
@@ -517,7 +525,9 @@ class LightweightScraperService {
     try {
       logger.info('Scraping career pages', { keywords, location });
       const jobs: ScrapedJob[] = [];
-      const searchTerms = keywords.join(' ');
+      // Use only the first keyword. AutoPilot now sends individual keywords in separate batches.
+      // This avoids the poor search quality of multi-keyword queries like "React Developer Node.js TypeScript".
+      const searchTerms = keywords[0] || 'software developer';
 
       // OPTIMIZATION: Single unified query instead of 3 separate SerpAPI calls
       // Saves 66% of SerpAPI credits on career page scraping

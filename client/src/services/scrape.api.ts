@@ -7,6 +7,22 @@ export interface SearchConfig {
   location?: string
   keywords?: string[]
   experienceLevel?: string
+  freeTextQuery?: string  // Natural language search, e.g. "משרת פיתוח מוצר בסטרטאפים"
+}
+
+export interface SearchIntent {
+  originalQuery: string
+  intentSummary: string
+  keywords: string[]
+  hebrewKeywords: string[]
+  scoringBoosts: {
+    titlePatterns: string[]
+    companyTypes: string[]
+    domains: string[]
+    mustHaveSkills: string[]
+    preferRemote: boolean
+    preferHybrid: boolean
+  }
 }
 
 export const scrapeApi = {
@@ -63,6 +79,15 @@ export const scrapeApi = {
 
   async getSearchHistory(): Promise<{ success: boolean; data: SearchHistoryEntry[] }> {
     const { data } = await apiClient.get('/scrape/search-history')
+    return data
+  },
+
+  /**
+   * Interpret a free-text search query without searching.
+   * Returns the parsed intent — useful for showing a preview in the UI.
+   */
+  async interpretSearch(query: string): Promise<{ success: boolean; data: SearchIntent }> {
+    const { data } = await apiClient.post('/scrape/interpret-search', { query })
     return data
   },
 }

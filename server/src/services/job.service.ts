@@ -37,6 +37,12 @@ export class JobService {
 
       const where: any = { isActive: true };
 
+      // Exclude hidden jobs — the caller passes IDs fetched from the
+      // hidden_jobs table so we can filter them out at the DB level.
+      if (filters.excludeJobIds && filters.excludeJobIds.length > 0) {
+        where.id = { notIn: filters.excludeJobIds };
+      }
+
       if (filters.company) {
         where.company = { contains: filters.company, mode: 'insensitive' };
       }

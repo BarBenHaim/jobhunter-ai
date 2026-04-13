@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useQuery, useMutation } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Search,
@@ -22,6 +22,8 @@ import {
   SlidersHorizontal,
   History,
   Zap,
+  EyeOff,
+  Eye,
 } from 'lucide-react'
 import { Card } from '@/components/common/Card'
 import { Badge } from '@/components/common/Badge'
@@ -31,6 +33,7 @@ import { Job, JobFilters } from '@/types'
 import { jobsApi } from '@/services/jobs.api'
 import { cvApi } from '@/services/cv.api'
 import { scrapeApi, SearchHistoryEntry } from '@/services/scrape.api'
+import { hiddenJobsApi } from '@/services/hidden-jobs.api'
 
 const SOURCE_DISPLAY: Record<string, { label: string; color: 'primary' | 'success' | 'warning' | 'error' | 'gray' }> = {
   LINKEDIN: { label: 'LinkedIn', color: 'primary' },
@@ -334,6 +337,7 @@ const MIN_SCORE_OPTIONS = [
 
 const JobBrowser = () => {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [searchParams, setSearchParams] = useSearchParams()
   const [page, setPage] = useState(1)
   const [expandedJob, setExpandedJob] = useState<string | null>(null)
@@ -445,6 +449,13 @@ const JobBrowser = () => {
       return res?.meta?.total ?? 0
     },
     staleTime: 60_000,
+  })
+
+  const hideJobMutation = useMutation({
+    mutationFn: ({ jobId, reason }: { jobId: string; reason?: string }) => hiddenJobsApi.hide(jobId, reason),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['jobs'] })
+    },
   })
 
   const rawJobs: Job[] = jobsResponse?.data || []
@@ -968,6 +979,16 @@ const JobBrowser = () => {
                           title="התאם CV למשרה"
                         >
                           <FileText size={16} />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            hideJobMutation.mutate({ jobId: job.id, reason: 'not_interested' })
+                          }}
+                          className="p-1.5 rounded-lg hover:bg-gray-700 text-gray-400 hover:text-orange-400 transition-colors"
+                          title="הסתר משרה"
+                        >
+                          <EyeOff className="w-4 h-4" />
                         </button>
                         <button
                           onClick={() => setExpandedJob(isExpanded ? null : job.id)}

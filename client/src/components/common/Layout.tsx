@@ -13,6 +13,7 @@ import {
   Search,
   Bell,
   Zap,
+  Bookmark,
 } from 'lucide-react'
 import { useAppStore } from '@/stores/app.store'
 import { authApi } from '@/services/auth.api'
@@ -24,6 +25,7 @@ const navItems = [
   { label: 'קורות חיים', path: '/cv-generator', icon: FileText },
   { label: 'הגשות', path: '/pipeline', icon: TrendingUp },
   { label: 'AutoPilot', path: '/autopilot', icon: Zap },
+  { label: 'חיפושים שמורים', path: '/saved-searches', icon: Bookmark },
   { label: 'פרופיל', path: '/profile', icon: User },
   { label: 'הגדרות', path: '/settings', icon: Settings },
 ]

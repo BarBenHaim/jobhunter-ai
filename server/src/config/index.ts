@@ -13,22 +13,11 @@ export const config = {
     url: process.env.DATABASE_URL || 'postgresql://localhost/jobhunter_ai',
   },
   jwt: {
-    // NOTE: the actual secret is resolved inside middleware/auth.ts where
-    // we enforce strength requirements. This is only exposed for tooling.
-    secret: process.env.JWT_SECRET || '',
-    accessExpiresIn: process.env.JWT_EXPIRES_IN || '15m',
-    refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '30d',
+    secret: process.env.JWT_SECRET || 'change-me-in-production',
+    expiresIn: process.env.JWT_EXPIRES_IN || '7d',
   },
   cors: {
     origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
-    strict: process.env.CORS_STRICT !== 'false', // reject unknown origins by default
-  },
-  auth: {
-    // When true, demo login endpoint is enabled (for dev/testing only)
-    allowDemoLogin: process.env.ALLOW_DEMO_LOGIN === 'true',
-    passwordMinLength: parseInt(process.env.PASSWORD_MIN_LENGTH || '8', 10),
-    bcryptRounds: parseInt(process.env.BCRYPT_ROUNDS || '12', 10),
-    resetTokenTtlMinutes: parseInt(process.env.PASSWORD_RESET_TTL_MIN || '30', 10),
   },
   logging: {
     level: process.env.LOG_LEVEL || 'info',
@@ -71,9 +60,6 @@ export const config = {
     scoringEnabled: process.env.AI_SCORING_ENABLED === 'true',
     cvGenerationEnabled: process.env.AI_CV_GENERATION_ENABLED === 'true',
     interviewPrepEnabled: process.env.AI_INTERVIEW_PREP_ENABLED === 'true',
-  },
-  serpapi: {
-    apiKey: process.env.SERPAPI_KEY || '',
   },
   playwright: {
     headless: process.env.PLAYWRIGHT_HEADLESS !== 'false',

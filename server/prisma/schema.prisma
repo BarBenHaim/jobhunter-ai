@@ -382,3 +382,104 @@ model UploadedCV {
   @@index([userId, roleType])
   @@map("uploaded_cvs")
 }
+
+// ─── Hidden/Dismissed Jobs ────────────────────────────────
+// User can hide jobs they don't want to see again
+model HiddenJob {
+  id                 String   @id @default(cuid())
+  userId             String
+  jobId              String
+  reason             String?  // "not_interested", "already_applied", "wrong_fit", etc.
+  createdAt          DateTime @default(now())
+
+  @@unique([userId, jobId])
+  @@index([userId])
+  @@map("hidden_jobs")
+}
+
+// ─── Saved Searches ───────────────────────────────────────
+// User can save search criteria and get notified about new matches
+model SavedSearch {
+  id                 String   @id @default(cuid())
+  userId             String
+  name               String   // User-defined name, e.g. "פולסטאק בסטרטאפים"
+
+  // Search configuration
+  freeTextQuery      String?  // Natural language query
+  keywords           String[] // Keyword list
+  sources            String[] // Job source filters
+  location           String?
+  minScore           Int      @default(0)
+  experienceLevel    String?
+
+  // Notification settings
+  notifyEmail        Boolean  @default(true)
+  notifyFrequency    String   @default("daily") // "realtime", "hourly", "daily", "weekly"
+  isActive           Boolean  @default(true)
+
+  // Tracking
+  lastRunAt          DateTime?
+  lastNotifiedAt     DateTime?
+  totalJobsFound     Int      @default(0)
+  newJobsSinceNotify Int      @default(0)
+
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([userId])
+  @@index([userId, isActive])
+  @@map("saved_searches")
+}
+
+// ─── Company Profiles ─────────────────────────────────────
+// Rich company directory with metadata
+model CompanyProfile {
+  id                 String   @id @default(cuid())
+  slug               String   @unique // URL-friendly identifier
+  name               String
+  nameHe             String?  // Hebrew name
+
+  // Basic info
+  website            String?
+  careersUrl         String?
+  linkedinUrl        String?
+  atsProvider        String?  // "greenhouse", "lever", "ashby", "comeet", "workday", "custom"
+  atsIdentifier      String?  // Greenhouse board token, Lever company slug, etc.
+
+  // Company metadata
+  foundedYear        Int?
+  employeeCount      Int?     // Approximate
+  employeeRange      String?  // "1-10", "11-50", "51-200", "201-500", "501-1000", "1001-5000", "5000+"
+  industry           String?  // "SaaS", "Fintech", "Cybersecurity", "AI/ML", "HealthTech", etc.
+  subIndustry        String?
+  techStack          String[] // Known tech stack: ["React", "Python", "AWS", ...]
+
+  // Funding & stage
+  stage              String?  // "Seed", "Series A", "Series B", "Series C+", "Public", "Bootstrap"
+  lastFundingRound   String?
+  lastFundingAmount  String?
+  totalFunding       String?
+
+  // Location
+  hqCity             String?
+  hqCountry          String   @default("Israel")
+  offices            String[] // Other office locations
+
+  // Classification
+  category           String?  // "unicorn", "top_company", "growing", "startup", "enterprise"
+  tags               String[] // Additional tags: "remote-friendly", "defense", "web3", etc.
+
+  // Stats
+  activeJobCount     Int      @default(0)
+  lastScannedAt      DateTime?
+
+  isActive           Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([industry])
+  @@index([category])
+  @@index([hqCountry])
+  @@index([isActive])
+  @@map("company_profiles")
+}

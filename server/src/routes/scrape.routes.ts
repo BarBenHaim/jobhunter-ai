@@ -4,7 +4,8 @@ import { companyDiscoveryService } from '../services/company-discovery.service'
 import { jobService } from '../services/job.service'
 import { profileService } from '../services/profile.service'
 import { personaService } from '../services/persona.service'
-import { smartMatchService, analyzeProfileForScoring, scoreJobLocally } from '../services/smart-match.service'
+import { smartMatchService, analyzeProfileForScoring, scoreJobLocally, buildSkillDepthProfile, aiReRankJobs, generateStackSearchQueries, interpretFreeTextSearch, applyFreeTextBoosts } from '../services/smart-match.service'
+import type { SkillDepth, FreeTextSearchIntent } from '../services/smart-match.service'
 import { authMiddleware, optionalAuthMiddleware, AuthRequest } from '../middleware/auth'
 import prisma from '../db/prisma'
 import logger from '../utils/logger'
@@ -134,6 +135,7 @@ router.post('/smart-trigger', authMiddleware, async (req: AuthRequest, res: Resp
       location: req.body.location as string | undefined,       // e.g. 'Tel Aviv'
       keywords: req.body.keywords as string[] | undefined,     // e.g. ['React','Node.js']
       experienceLevel: req.body.experienceLevel as string | undefined,
+      freeTextQuery: req.body.freeTextQuery as string | undefined, // e.g. 'משרת פיתוח מוצר בסטרטאפים'
     }
 
     const searchSessionId = generateSearchId()
@@ -154,6 +156,30 @@ router.post('/smart-trigger', authMiddleware, async (req: AuthRequest, res: Resp
     const structuredProfile = profile.structuredProfile || {}
     const rawKnowledge = profile.rawKnowledge || {}
     const preferences = profile.preferences || {}
+
+    // Step 1.5: Interpret free-text search query (if provided)
+    let freeTextIntent: FreeTextSearchIntent | null = null
+    if (searchConfig.freeTextQuery && searchConfig.freeTextQuery.trim().length > 0) {
+      try {
+        freeTextIntent = await interpretFreeTextSearch(
+          searchConfig.freeTextQuery.trim(),
+          structuredProfile,
+          rawKnowledge,
+          preferences,
+        )
+        logger.info('Free-text search interpreted', {
+          query: searchConfig.freeTextQuery,
+          keywords: freeTextIntent.keywords.length,
+          hebrewKeywords: freeTextIntent.hebrewKeywords.length,
+          titlePatterns: freeTextIntent.scoringBoosts.titlePatterns.length,
+          companyTypes: freeTextIntent.scoringBoosts.companyTypes,
+          domains: freeTextIntent.scoringBoosts.domains,
+          intentSummary: freeTextIntent.intentSummary,
+        })
+      } catch (err) {
+        logger.warn('Free-text interpretation failed, continuing with standard search', err)
+      }
+    }
 
     // Step 2: Generate smart keywords using AI
     let smartKeywords: any
@@ -179,19 +205,68 @@ router.post('/smart-trigger', authMiddleware, async (req: AuthRequest, res: Resp
       }
     }
 
-    // Step 3: Use combined keywords for scraping (these are optimized for job boards)
-    const keywordsToUse = smartKeywords.combined?.length > 0
-      ? smartKeywords.combined
-      : DEFAULT_KEYWORDS
+    // Step 2.5: Skill depth profiling + tech-stack search queries
+    let skillDepth: SkillDepth[] = []
+    let stackQueries: string[] = []
+    try {
+      skillDepth = buildSkillDepthProfile(structuredProfile, rawKnowledge)
+      if (skillDepth.length > 0) {
+        logger.info('Skill depth profile built', { count: skillDepth.length, top3: skillDepth.slice(0, 3).map(s => `${s.name}(${s.level})`) })
+      }
+    } catch (err) {
+      logger.warn('Skill depth profiling failed, continuing without it', err)
+    }
 
-    // If user supplied custom keywords, prefer those; otherwise use smart + profile keywords
+    // Generate stack-based search queries using skill depth analysis
+    const earlyProfileAnalysis = analyzeProfileForScoring(structuredProfile, rawKnowledge, preferences)
+    try {
+      stackQueries = generateStackSearchQueries(earlyProfileAnalysis, skillDepth, preferences)
+      if (stackQueries.length > 0) {
+        logger.info('Stack-based search queries generated', { count: stackQueries.length, queries: stackQueries })
+      }
+    } catch (err) {
+      logger.warn('Stack search query generation failed, continuing without it', err)
+    }
+
+    // Step 3: Merge combined + discovery + stack keywords for maximum coverage
+    const combinedKws = smartKeywords.combined?.length > 0
+      ? [...smartKeywords.combined]
+      : [...DEFAULT_KEYWORDS]
+
+    // Merge discovery keywords (modern/emerging roles the candidate may not know about)
+    const discoveryKws = smartKeywords.discovery || []
+    const combinedSet = new Set(combinedKws.map(k => k.toLowerCase()))
+    for (const dk of discoveryKws) {
+      if (!combinedSet.has(dk.toLowerCase())) {
+        combinedKws.push(dk)
+      }
+    }
+
+    // Merge tech-stack queries (skill-combo searches the candidate wouldn't think of)
+    for (const sq of stackQueries) {
+      if (!combinedSet.has(sq.toLowerCase())) {
+        combinedKws.push(sq)
+        combinedSet.add(sq.toLowerCase())
+      }
+    }
+
+    // Merge free-text keywords (if available)
+    if (freeTextIntent) {
+      for (const fk of [...freeTextIntent.keywords, ...freeTextIntent.hebrewKeywords]) {
+        if (!combinedSet.has(fk.toLowerCase())) {
+          combinedKws.push(fk)
+          combinedSet.add(fk.toLowerCase())
+        }
+      }
+    }
+
+    // If user supplied custom keywords, prefer those; otherwise use smart + discovery + stack + free-text keywords
     const finalKeywords = searchConfig.keywords?.length
       ? searchConfig.keywords
-      : keywordsToUse
+      : combinedKws
 
-    // OPTIMIZATION: Deduplicate keywords before batching
-    // Smart keywords often overlap (e.g. "React Developer" and "React" are redundant when joined)
-    const rawKeywords = finalKeywords.slice(0, 15)
+    // Deduplicate keywords before batching
+    const rawKeywords = finalKeywords.slice(0, 20)
     const seenLower = new Set<string>()
     const allKeywords = rawKeywords.filter(kw => {
       const lower = kw.toLowerCase().trim()
@@ -202,21 +277,17 @@ router.post('/smart-trigger', authMiddleware, async (req: AuthRequest, res: Resp
 
     const location = searchConfig.location || preferences?.preferredLocations?.[0] || 'Israel'
 
-    // OPTIMIZATION: Reduced from 3 batches to 2 — each batch joins keywords into one query,
-    // so fewer batches = fewer SerpAPI calls. With career pages now using 1 call instead of 3,
-    // each batch costs 2 SerpAPI calls (Google Jobs + Career Pages).
-    const BATCH_SIZE = 2
+    // Search each keyword individually for better job board results
+    // Joining 6+ keywords into one query produces nonsensical searches that job boards can't handle
     const keywordBatches: string[][] = []
-    for (let i = 0; i < allKeywords.length; i += Math.ceil(allKeywords.length / BATCH_SIZE)) {
-      const batch = allKeywords.slice(i, i + Math.ceil(allKeywords.length / BATCH_SIZE))
-      keywordBatches.push(batch)
+    for (const kw of allKeywords) {
+      keywordBatches.push([kw])
     }
 
-    logger.info('Smart scraping with batched keywords', {
+    logger.info('Smart scraping with individual keywords', {
       totalKeywords: allKeywords.length,
+      discoveryKeywords: discoveryKws.length,
       deduplicated: rawKeywords.length - allKeywords.length,
-      batches: keywordBatches.length,
-      estimatedSerpApiCalls: keywordBatches.length * 2,
       location,
     })
 
@@ -375,7 +446,7 @@ router.post('/smart-trigger', authMiddleware, async (req: AuthRequest, res: Resp
         const created = await jobService.createJob(job)
         if (created) {
           // Score locally — instant, no API call
-          const smartScore = scoreJobLocally(
+          let smartScore = scoreJobLocally(
             {
               title: created.title,
               company: created.company,
@@ -387,6 +458,17 @@ router.post('/smart-trigger', authMiddleware, async (req: AuthRequest, res: Resp
             profileAnalysis,
             preferences
           )
+
+          // Apply free-text scoring boosts if user provided a natural language query
+          if (freeTextIntent) {
+            smartScore = applyFreeTextBoosts(smartScore, {
+              title: created.title,
+              company: created.company,
+              description: created.description || '',
+              location: created.location || '',
+              locationType: (created as any).locationType || '',
+            }, freeTextIntent)
+          }
 
           // Attach the JobScore FIRST, before any early-return paths, so even
           // jobs skipped by the min-score filter still belong to this user.
@@ -459,7 +541,44 @@ router.post('/smart-trigger', authMiddleware, async (req: AuthRequest, res: Resp
       }
     }
 
-    // Sort created jobs by smart score
+    // ── AI Re-Ranking (optional, for top jobs) ──
+    // Sends top qualifying jobs to AI for deep analysis — blends 60% AI + 40% local score
+    let aiReRankingApplied = false
+    if (jobsCreated.length >= 3 && profileAnalysis) {
+      try {
+        const topForAI = jobsCreated
+          .sort((a, b) => (b.smartScore || 0) - (a.smartScore || 0))
+          .slice(0, 20)
+          .map(j => ({
+            id: j.id,
+            title: j.title || '',
+            company: j.company || '',
+            description: '', // We don't keep full description in jobsCreated — use title/company
+            requirements: '',
+            localScore: j.smartScore || 0,
+            localCategory: j.category || '',
+          }))
+
+        const reRanked = await aiReRankJobs(topForAI, profileAnalysis, skillDepth, preferences, 20)
+        if (reRanked.length > 0) {
+          const reRankedMap = new Map(reRanked.map(r => [r.id, r]))
+          for (const jc of jobsCreated) {
+            const aiResult = reRankedMap.get(jc.id)
+            if (aiResult) {
+              jc.smartScore = aiResult.finalScore
+              jc.category = aiResult.aiCategory || jc.category
+              jc.aiReasoning = aiResult.aiReasoning
+            }
+          }
+          aiReRankingApplied = true
+          logger.info('AI Re-Ranking applied', { reRankedCount: reRanked.length })
+        }
+      } catch (err) {
+        logger.warn('AI Re-Ranking failed in smart-trigger, using local scores only', err)
+      }
+    }
+
+    // Sort created jobs by smart score (potentially AI-enhanced)
     jobsCreated.sort((a, b) => (b.smartScore || 0) - (a.smartScore || 0))
 
     const avgScore = jobsCreated.length > 0
@@ -565,12 +684,66 @@ router.post('/smart-trigger', authMiddleware, async (req: AuthRequest, res: Resp
           experienceYears: profileAnalysis.experienceYears,
           coreSkillsCount: profileAnalysis.coreSkills.length,
           domainsDetected: profileAnalysis.domains,
+          skillDepthCount: skillDepth.length,
+          stackQueriesUsed: stackQueries.length,
+          aiReRankingApplied,
         },
+        freeTextSearch: freeTextIntent ? {
+          originalQuery: freeTextIntent.originalQuery,
+          intentSummary: freeTextIntent.intentSummary,
+          keywordsGenerated: freeTextIntent.keywords.length + freeTextIntent.hebrewKeywords.length,
+          boosts: freeTextIntent.scoringBoosts,
+        } : null,
       },
     })
   } catch (error) {
     logger.error('Smart scrape trigger error:', error)
     res.status(500).json({ success: false, error: 'Smart scrape failed' })
+  }
+})
+
+// POST /api/scrape/interpret-search - Preview how a free-text query will be interpreted
+// Returns the search intent without actually searching (fast, useful for UI preview)
+router.post('/interpret-search', authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.userId
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Authentication required' })
+    }
+
+    const { query } = req.body
+    if (!query || typeof query !== 'string' || query.trim().length === 0) {
+      return res.status(400).json({ success: false, error: 'query is required' })
+    }
+
+    // Load profile for context-aware interpretation
+    let structuredProfile: any = {}
+    let rawKnowledge: any = {}
+    let preferences: any = {}
+    try {
+      const profile = await profileService.getProfile(userId)
+      structuredProfile = (profile as any).structuredProfile || {}
+      rawKnowledge = (profile as any).rawKnowledge || {}
+      preferences = (profile as any).preferences || {}
+    } catch (err) {
+      logger.warn('Could not load profile for search interpretation', err)
+    }
+
+    const intent = await interpretFreeTextSearch(query.trim(), structuredProfile, rawKnowledge, preferences)
+
+    res.json({
+      success: true,
+      data: {
+        originalQuery: intent.originalQuery,
+        intentSummary: intent.intentSummary,
+        keywords: intent.keywords,
+        hebrewKeywords: intent.hebrewKeywords,
+        scoringBoosts: intent.scoringBoosts,
+      },
+    })
+  } catch (error) {
+    logger.error('Search interpretation error:', error)
+    res.status(500).json({ success: false, error: 'Failed to interpret search query' })
   }
 })
 
@@ -583,19 +756,13 @@ router.post('/trigger', async (req: Request, res: Response) => {
 
     logger.info('Scrape triggered', { keywords: keywordList, location })
 
-    // Batch keywords into max 3 scrapeAll calls to save SerpAPI credits
-    // Each scrapeAll costs 2 SerpAPI calls (Indeed + Google Jobs)
+    // Search each keyword individually for better job board results
     const allJobs: any[] = []
     const sourceBreakdown: Record<string, number> = {}
-    const BATCH_SIZE = 3
-    const batches: string[][] = []
-    for (let i = 0; i < keywordList.length; i += Math.ceil(keywordList.length / BATCH_SIZE)) {
-      batches.push(keywordList.slice(i, i + Math.ceil(keywordList.length / BATCH_SIZE)))
-    }
 
-    for (const batch of batches) {
+    for (const kw of keywordList) {
       try {
-        const results = await lightweightScraperService.scrapeAll(batch, location)
+        const results = await lightweightScraperService.scrapeAll([kw], location)
         for (const result of results) {
           if (result.jobs && result.jobs.length > 0) {
             allJobs.push(...result.jobs)
@@ -603,7 +770,7 @@ router.post('/trigger', async (req: Request, res: Response) => {
           }
         }
       } catch (err) {
-        logger.error(`Error scraping batch [${batch.join(', ')}]:`, err)
+        logger.error(`Error scraping keyword "${kw}":`, err)
       }
     }
 
@@ -614,14 +781,39 @@ router.post('/trigger', async (req: Request, res: Response) => {
       logger.info(`Filtered out ${filtered} irrelevant jobs (non-tech titles)`)
     }
 
-    // Save jobs to database
+    // Try to score jobs if user is authenticated
+    const authReq = req as AuthRequest
+    let profileAnalysis: any = null
+    let preferences: any = {}
+    if (authReq.userId) {
+      try {
+        const profile = await profileService.getProfile(authReq.userId)
+        preferences = (profile as any)?.preferences || {}
+        const structuredProfile = (profile as any)?.structuredProfile || {}
+        const rawKnowledge = (profile as any)?.rawKnowledge || {}
+        profileAnalysis = analyzeProfileForScoring(structuredProfile, rawKnowledge, preferences)
+      } catch (err) {
+        logger.warn('Could not load profile for scoring in trigger route', err)
+      }
+    }
+
+    // Save jobs to database (with scoring if profile available)
     let saved = 0
     let duplicates = 0
     const jobsCreated: any[] = []
 
     for (const job of relevantJobs) {
       try {
-        const created = await jobService.createJob(job)
+        // Score if we have a profile
+        let score = null
+        if (profileAnalysis) {
+          score = scoreJobLocally(job, profileAnalysis, preferences)
+        }
+
+        const created = await jobService.createJob({
+          ...job,
+          ...(score ? { smartScore: score.score, scoreCategory: score.category } : {}),
+        })
         if (created) {
           saved++
           jobsCreated.push({
@@ -629,6 +821,7 @@ router.post('/trigger', async (req: Request, res: Response) => {
             title: created.title,
             company: created.company,
             source: created.source,
+            ...(score ? { score: score.score, category: score.category } : {}),
           })
         }
       } catch (err: any) {

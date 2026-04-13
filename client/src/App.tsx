@@ -33,6 +33,7 @@ import Guide from '@/pages/Guide'
 import Intelligence from '@/pages/Intelligence'
 import Discovery from '@/pages/Discovery'
 import AutoPilot from '@/pages/AutoPilot'
+import SavedSearches from '@/pages/SavedSearches'
 
 /**
  * Wraps routes that require an authenticated user. If the user is not
@@ -120,6 +121,7 @@ function AuthenticatedApp() {
         <Route path="/intelligence" element={<Intelligence />} />
         <Route path="/discovery" element={<Discovery />} />
         <Route path="/autopilot" element={<AutoPilot />} />
+        <Route path="/saved-searches" element={<SavedSearches />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
 

@@ -4,6 +4,7 @@ import { authMiddleware, optionalAuthMiddleware, AuthRequest } from '../middlewa
 import { asyncHandler } from '../middleware/errorHandler';
 import { jobService } from '../services/job.service';
 import { scrapingQueue } from '../queue';
+import prisma from '../db/prisma';
 import logger from '../utils/logger';
 
 const router = Router();
@@ -92,6 +93,23 @@ router.get(
     // (via JobScore → Persona.userId). Anonymous callers fall back to the
     // legacy 'public' scope, which returns the global pool.
     const userId = req.userId || 'public';
+
+    // Fetch hidden job IDs for this user to exclude from results
+    if (userId !== 'public') {
+      try {
+        const hiddenJobs = await (prisma as any).hiddenJob.findMany({
+          where: { userId },
+          select: { jobId: true },
+        });
+        if (hiddenJobs.length > 0) {
+          filters.excludeJobIds = hiddenJobs.map((h: any) => h.jobId);
+        }
+      } catch (err) {
+        // hiddenJob table might not exist yet — silently continue
+        logger.debug('Hidden jobs lookup skipped (table may not exist)', err);
+      }
+    }
+
     const result = await jobService.listJobs(userId, filters, pagination);
 
     res.status(200).json({
